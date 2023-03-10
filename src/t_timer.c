@@ -37,19 +37,15 @@
 #include "timer.h"
 #include "iperf_time.h"
 
-
 static int flag;
 
-
 static void
-timer_proc( TimerClientData client_data, struct iperf_time* nowP )
+timer_proc(TimerClientData client_data, struct iperf_time *nowP)
 {
     flag = 1;
 }
 
-
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     Timer *tp;
 
@@ -57,8 +53,8 @@ main(int argc, char **argv)
     tp = tmr_create(NULL, timer_proc, JunkClientData, 3000000, 0);
     if (!tp)
     {
-	printf("failed to create timer\n");
-	exit(-1);
+        printf("failed to create timer\n");
+        exit(-1);
     }
 
     sleep(2);
@@ -66,16 +62,16 @@ main(int argc, char **argv)
     tmr_run(NULL);
     if (flag)
     {
-	printf("timer should not have expired\n");
-	exit(-1);
+        printf("timer should not have expired\n");
+        exit(-1);
     }
     sleep(1);
 
     tmr_run(NULL);
     if (!flag)
     {
-	printf("timer should have expired\n");
-	exit(-2);
+        printf("timer should have expired\n");
+        exit(-2);
     }
 
     tmr_destroy();

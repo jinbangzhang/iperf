@@ -25,7 +25,6 @@
  * file for complete information.
  */
 
-
 #include <stddef.h>
 
 #include "iperf_config.h"
@@ -35,15 +34,15 @@
 
 #include <time.h>
 
-int
-iperf_time_now(struct iperf_time *time1)
+int iperf_time_now(struct iperf_time *time1)
 {
     struct timespec ts;
     int result;
     result = clock_gettime(CLOCK_MONOTONIC, &ts);
-    if (result == 0) {
-        time1->secs = (uint32_t) ts.tv_sec;
-        time1->usecs = (uint32_t) ts.tv_nsec / 1000;
+    if (result == 0)
+    {
+        time1->secs = (uint32_t)ts.tv_sec;
+        time1->usecs = (uint32_t)ts.tv_nsec / 1000;
     }
     return result;
 }
@@ -52,8 +51,7 @@ iperf_time_now(struct iperf_time *time1)
 
 #include <sys/time.h>
 
-int
-iperf_time_now(struct iperf_time *time1)
+int iperf_time_now(struct iperf_time *time1)
 {
     struct timeval tv;
     int result;
@@ -69,12 +67,12 @@ iperf_time_now(struct iperf_time *time1)
  *
  * Add a number of microseconds to a iperf_time.
  */
-void
-iperf_time_add_usecs(struct iperf_time *time1, uint64_t usecs)
+void iperf_time_add_usecs(struct iperf_time *time1, uint64_t usecs)
 {
     time1->secs += usecs / 1000000L;
     time1->usecs += usecs % 1000000L;
-    if ( time1->usecs >= 1000000L ) {
+    if (time1->usecs >= 1000000L)
+    {
         time1->secs += time1->usecs / 1000000L;
         time1->usecs %= 1000000L;
     }
@@ -99,8 +97,7 @@ iperf_time_in_secs(struct iperf_time *time)
  * Returns -1 if time1 is earlier, 1 if time1 is later,
  * or 0 if the timestamps are equal.
  */
-int
-iperf_time_compare(struct iperf_time *time1, struct iperf_time *time2)
+int iperf_time_compare(struct iperf_time *time1, struct iperf_time *time2)
 {
     if (time1->secs < time2->secs)
         return -1;
@@ -121,30 +118,35 @@ iperf_time_compare(struct iperf_time *time1, struct iperf_time *time2)
  *
  * Returns 1 if the time1 is less than or equal to time2, otherwise 0.
  */
-int
-iperf_time_diff(struct iperf_time *time1, struct iperf_time *time2, struct iperf_time *diff)
+int iperf_time_diff(struct iperf_time *time1, struct iperf_time *time2, struct iperf_time *diff)
 {
     int past = 0;
     int cmp = 0;
 
     cmp = iperf_time_compare(time1, time2);
-    if (cmp == 0) {
+    if (cmp == 0)
+    {
         diff->secs = 0;
         diff->usecs = 0;
         past = 1;
     }
-    else if (cmp == 1) {
+    else if (cmp == 1)
+    {
         diff->secs = time1->secs - time2->secs;
         diff->usecs = time1->usecs;
-        if (diff->usecs < time2->usecs) {
+        if (diff->usecs < time2->usecs)
+        {
             diff->secs -= 1;
             diff->usecs += 1000000;
         }
         diff->usecs = diff->usecs - time2->usecs;
-    } else {
+    }
+    else
+    {
         diff->secs = time2->secs - time1->secs;
         diff->usecs = time2->usecs;
-        if (diff->usecs < time1->usecs) {
+        if (diff->usecs < time1->usecs)
+        {
             diff->secs -= 1;
             diff->usecs += 1000000;
         }
