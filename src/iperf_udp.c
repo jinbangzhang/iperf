@@ -607,6 +607,10 @@ int iperf_udp_connect(struct iperf_test *test)
     {
         printf("Sending Connect message to Socket %d\n", s);
     }
+
+    struct iperf_time sent_time;
+    iperf_time_now(&sent_time);
+
     if (write(s, &buf, sizeof(buf)) < 0)
     {
         // XXX: Should this be changed to IESTREAMCONNECT?
@@ -634,6 +638,12 @@ int iperf_udp_connect(struct iperf_test *test)
         }
         i += sz;
     } while (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY && i < max_len_wait_for_reply);
+
+    struct iperf_time arrival_time, temp_time;
+    iperf_time_now(&arrival_time);
+    iperf_time_diff(&arrival_time, &sent_time, &temp_time);
+    double delay = iperf_time_in_secs(&temp_time);
+    printf("-b %luM delay(arrival_time-sent_time) = %f\n", test->settings->rate/1000000, delay);
 
     if (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY)
     {
