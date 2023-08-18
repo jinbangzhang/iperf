@@ -50,30 +50,28 @@
 #include "portable_endian.h"
 
 #if defined(HAVE_INTTYPES_H)
-# include <inttypes.h>
+#include <inttypes.h>
 #else
-# ifndef PRIu64
-#  if sizeof(long) == 8
-#   define PRIu64		"lu"
-#  else
-#   define PRIu64		"llu"
-#  endif
-# endif
+#ifndef PRIu64
+#if sizeof(long) == 8
+#define PRIu64 "lu"
+#else
+#define PRIu64 "llu"
+#endif
+#endif
 #endif
 
 /* iperf_udp_recv
  *
  * receives the data for UDP
  */
-int
-iperf_udp_recv(struct iperf_stream *sp)
-{
-    uint32_t  sec, usec;
-    uint64_t  pcount;
-    int       r;
-    int       size = sp->settings->blksize;
-    int       first_packet = 0;
-    double    transit = 0, d = 0;
+int iperf_udp_recv(struct iperf_stream *sp) {
+    uint32_t sec, usec;
+    uint64_t pcount;
+    int r;
+    int size = sp->settings->blksize;
+    int first_packet = 0;
+    double transit = 0, d = 0;
     struct iperf_time sent_time, arrival_time, temp_time;
 
     r = Nread(sp->socket, sp->buffer, size, Pudp);
@@ -88,132 +86,124 @@ iperf_udp_recv(struct iperf_stream *sp)
 
     /* Only count bytes received while we're in the correct state. */
     if (sp->test->state == TEST_RUNNING) {
+        /*
+         * For jitter computation below, it's important to know if this
+         * packet is the first packet received.
+         */
+        if (sp->result->bytes_received == 0) {
+            first_packet = 1;
+        }
 
-	/*
-	 * For jitter computation below, it's important to know if this
-	 * packet is the first packet received.
-	 */
-	if (sp->result->bytes_received == 0) {
-	    first_packet = 1;
-	}
+        sp->result->bytes_received += r;
+        sp->result->bytes_received_this_interval += r;
 
-	sp->result->bytes_received += r;
-	sp->result->bytes_received_this_interval += r;
+        /* Dig the various counters out of the incoming UDP packet */
+        if (sp->test->udp_counters_64bit) {
+            memcpy(&sec, sp->buffer, sizeof(sec));
+            memcpy(&usec, sp->buffer + 4, sizeof(usec));
+            memcpy(&pcount, sp->buffer + 8, sizeof(pcount));
+            sec = ntohl(sec);
+            usec = ntohl(usec);
+            pcount = be64toh(pcount);
+            sent_time.secs = sec;
+            sent_time.usecs = usec;
+        } else {
+            uint32_t pc;
+            memcpy(&sec, sp->buffer, sizeof(sec));
+            memcpy(&usec, sp->buffer + 4, sizeof(usec));
+            memcpy(&pc, sp->buffer + 8, sizeof(pc));
+            sec = ntohl(sec);
+            usec = ntohl(usec);
+            pcount = ntohl(pc);
+            sent_time.secs = sec;
+            sent_time.usecs = usec;
+        }
 
-	/* Dig the various counters out of the incoming UDP packet */
-	if (sp->test->udp_counters_64bit) {
-	    memcpy(&sec, sp->buffer, sizeof(sec));
-	    memcpy(&usec, sp->buffer+4, sizeof(usec));
-	    memcpy(&pcount, sp->buffer+8, sizeof(pcount));
-	    sec = ntohl(sec);
-	    usec = ntohl(usec);
-	    pcount = be64toh(pcount);
-	    sent_time.secs = sec;
-	    sent_time.usecs = usec;
-	}
-	else {
-	    uint32_t pc;
-	    memcpy(&sec, sp->buffer, sizeof(sec));
-	    memcpy(&usec, sp->buffer+4, sizeof(usec));
-	    memcpy(&pc, sp->buffer+8, sizeof(pc));
-	    sec = ntohl(sec);
-	    usec = ntohl(usec);
-	    pcount = ntohl(pc);
-	    sent_time.secs = sec;
-	    sent_time.usecs = usec;
-	}
+        if (sp->test->debug_level >= DEBUG_LEVEL_DEBUG)
+            fprintf(stderr, "pcount %" PRIu64 " packet_count %d\n", pcount, sp->packet_count);
 
-	if (sp->test->debug_level >= DEBUG_LEVEL_DEBUG)
-	    fprintf(stderr, "pcount %" PRIu64 " packet_count %d\n", pcount, sp->packet_count);
+        /*
+         * Try to handle out of order packets.  The way we do this
+         * uses a constant amount of storage but might not be
+         * correct in all cases.  In particular we seem to have the
+         * assumption that packets can't be duplicated in the network,
+         * because duplicate packets will possibly cause some problems here.
+         *
+         * First figure out if the sequence numbers are going forward.
+         * Note that pcount is the sequence number read from the packet,
+         * and sp->packet_count is the highest sequence number seen so
+         * far (so we're expecting to see the packet with sequence number
+         * sp->packet_count + 1 arrive next).
+         */
+        if (pcount >= sp->packet_count + 1) {
+            /* Forward, but is there a gap in sequence numbers? */
+            if (pcount > sp->packet_count + 1) {
+                /* There's a gap so count that as a loss. */
+                sp->cnt_error += (pcount - 1) - sp->packet_count;
+            }
+            /* Update the highest sequence number seen so far. */
+            sp->packet_count = pcount;
+        } else {
+            /*
+             * Sequence number went backward (or was stationary?!?).
+             * This counts as an out-of-order packet.
+             */
+            sp->outoforder_packets++;
 
-	/*
-	 * Try to handle out of order packets.  The way we do this
-	 * uses a constant amount of storage but might not be
-	 * correct in all cases.  In particular we seem to have the
-	 * assumption that packets can't be duplicated in the network,
-	 * because duplicate packets will possibly cause some problems here.
-	 *
-	 * First figure out if the sequence numbers are going forward.
-	 * Note that pcount is the sequence number read from the packet,
-	 * and sp->packet_count is the highest sequence number seen so
-	 * far (so we're expecting to see the packet with sequence number
-	 * sp->packet_count + 1 arrive next).
-	 */
-	if (pcount >= sp->packet_count + 1) {
+            /*
+             * If we have lost packets, then the fact that we are now
+             * seeing an out-of-order packet offsets a prior sequence
+             * number gap that was counted as a loss.  So we can take
+             * away a loss.
+             */
+            if (sp->cnt_error > 0)
+                sp->cnt_error--;
 
-	    /* Forward, but is there a gap in sequence numbers? */
-	    if (pcount > sp->packet_count + 1) {
-		/* There's a gap so count that as a loss. */
-		sp->cnt_error += (pcount - 1) - sp->packet_count;
-	    }
-	    /* Update the highest sequence number seen so far. */
-	    sp->packet_count = pcount;
-	} else {
+            /* Log the out-of-order packet */
+            if (sp->test->debug)
+                fprintf(stderr, "OUT OF ORDER - incoming packet sequence %" PRIu64 " but expected sequence %d on stream %d", pcount, sp->packet_count + 1, sp->socket);
+        }
 
-	    /*
-	     * Sequence number went backward (or was stationary?!?).
-	     * This counts as an out-of-order packet.
-	     */
-	    sp->outoforder_packets++;
+        /*
+         * jitter measurement
+         *
+         * This computation is based on RFC 1889 (specifically
+         * sections 6.3.1 and A.8).
+         *
+         * Note that synchronized clocks are not required since
+         * the source packet delta times are known.  Also this
+         * computation does not require knowing the round-trip
+         * time.
+         */
+        iperf_time_now(&arrival_time);
 
-	    /*
-	     * If we have lost packets, then the fact that we are now
-	     * seeing an out-of-order packet offsets a prior sequence
-	     * number gap that was counted as a loss.  So we can take
-	     * away a loss.
-	     */
-	    if (sp->cnt_error > 0)
-		sp->cnt_error--;
+        iperf_time_diff(&arrival_time, &sent_time, &temp_time);
+        transit = iperf_time_in_secs(&temp_time);
 
-	    /* Log the out-of-order packet */
-	    if (sp->test->debug)
-		fprintf(stderr, "OUT OF ORDER - incoming packet sequence %" PRIu64 " but expected sequence %d on stream %d", pcount, sp->packet_count + 1, sp->socket);
-	}
+        /* Hack to handle the first packet by initializing prev_transit. */
+        if (first_packet)
+            sp->prev_transit = transit;
 
-	/*
-	 * jitter measurement
-	 *
-	 * This computation is based on RFC 1889 (specifically
-	 * sections 6.3.1 and A.8).
-	 *
-	 * Note that synchronized clocks are not required since
-	 * the source packet delta times are known.  Also this
-	 * computation does not require knowing the round-trip
-	 * time.
-	 */
-	iperf_time_now(&arrival_time);
-
-	iperf_time_diff(&arrival_time, &sent_time, &temp_time);
-	transit = iperf_time_in_secs(&temp_time);
-
-	/* Hack to handle the first packet by initializing prev_transit. */
-	if (first_packet)
-	    sp->prev_transit = transit;
-
-	d = transit - sp->prev_transit;
-	if (d < 0)
-	    d = -d;
-	sp->prev_transit = transit;
-	sp->jitter += (d - sp->jitter) / 16.0;
-    }
-    else {
-	if (sp->test->debug)
-	    printf("Late receive, state = %d\n", sp->test->state);
+        d = transit - sp->prev_transit;
+        if (d < 0)
+            d = -d;
+        sp->prev_transit = transit;
+        sp->jitter += (d - sp->jitter) / 16.0;
+    } else {
+        if (sp->test->debug)
+            printf("Late receive, state = %d\n", sp->test->state);
     }
 
     return r;
 }
 
-
 /* iperf_udp_send
  *
  * sends the data for UDP
  */
-int
-iperf_udp_send(struct iperf_stream *sp)
-{
+int iperf_udp_send(struct iperf_stream *sp) {
     int r;
-    int       size = sp->settings->blksize;
+    int size = sp->settings->blksize;
     struct iperf_time before;
 
     iperf_time_now(&before);
@@ -221,47 +211,42 @@ iperf_udp_send(struct iperf_stream *sp)
     ++sp->packet_count;
 
     if (sp->test->udp_counters_64bit) {
+        uint32_t sec, usec;
+        uint64_t pcount;
 
-	uint32_t  sec, usec;
-	uint64_t  pcount;
+        sec = htonl(before.secs);
+        usec = htonl(before.usecs);
+        pcount = htobe64(sp->packet_count);
 
-	sec = htonl(before.secs);
-	usec = htonl(before.usecs);
-	pcount = htobe64(sp->packet_count);
+        memcpy(sp->buffer, &sec, sizeof(sec));
+        memcpy(sp->buffer + 4, &usec, sizeof(usec));
+        memcpy(sp->buffer + 8, &pcount, sizeof(pcount));
 
-	memcpy(sp->buffer, &sec, sizeof(sec));
-	memcpy(sp->buffer+4, &usec, sizeof(usec));
-	memcpy(sp->buffer+8, &pcount, sizeof(pcount));
+    } else {
+        uint32_t sec, usec, pcount;
 
-    }
-    else {
+        sec = htonl(before.secs);
+        usec = htonl(before.usecs);
+        pcount = htonl(sp->packet_count);
 
-	uint32_t  sec, usec, pcount;
-
-	sec = htonl(before.secs);
-	usec = htonl(before.usecs);
-	pcount = htonl(sp->packet_count);
-
-	memcpy(sp->buffer, &sec, sizeof(sec));
-	memcpy(sp->buffer+4, &usec, sizeof(usec));
-	memcpy(sp->buffer+8, &pcount, sizeof(pcount));
-
+        memcpy(sp->buffer, &sec, sizeof(sec));
+        memcpy(sp->buffer + 4, &usec, sizeof(usec));
+        memcpy(sp->buffer + 8, &pcount, sizeof(pcount));
     }
 
     r = Nwrite(sp->socket, sp->buffer, size, Pudp);
 
     if (r < 0)
-	return r;
+        return r;
 
     sp->result->bytes_sent += r;
     sp->result->bytes_sent_this_interval += r;
 
-    if (sp->test->debug_level >=  DEBUG_LEVEL_DEBUG)
-	printf("sent %d bytes of %d, total %" PRIu64 "\n", r, sp->settings->blksize, sp->result->bytes_sent);
+    if (sp->test->debug_level >= DEBUG_LEVEL_DEBUG)
+        printf("sent %d bytes of %d, total %" PRIu64 "\n", r, sp->settings->blksize, sp->result->bytes_sent);
 
     return r;
 }
-
 
 /**************************************************************************/
 
@@ -279,9 +264,7 @@ iperf_udp_send(struct iperf_stream *sp)
  * Return 0 if no error, -1 if an error, +1 if socket buffers are
  * potentially too small to hold a message.
  */
-int
-iperf_udp_buffercheck(struct iperf_test *test, int s)
-{
+int iperf_udp_buffercheck(struct iperf_test *test, int s) {
     int rc = 0;
     int sndbuf_actual, rcvbuf_actual;
 
@@ -306,51 +289,51 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
     /* Read back and verify the sender socket buffer size */
     optlen = sizeof(sndbuf_actual);
     if (getsockopt(s, SOL_SOCKET, SO_SNDBUF, &sndbuf_actual, &optlen) < 0) {
-	i_errno = IESETBUF;
-	return -1;
+        i_errno = IESETBUF;
+        return -1;
     }
     if (test->debug) {
-	printf("SNDBUF is %u, expecting %u\n", sndbuf_actual, test->settings->socket_bufsize);
+        printf("SNDBUF is %u, expecting %u\n", sndbuf_actual, test->settings->socket_bufsize);
     }
     if (test->settings->socket_bufsize && test->settings->socket_bufsize > sndbuf_actual) {
-	i_errno = IESETBUF2;
-	return -1;
+        i_errno = IESETBUF2;
+        return -1;
     }
     if (test->settings->blksize > sndbuf_actual) {
-	char str[WARN_STR_LEN];
-	snprintf(str, sizeof(str),
-		 "Block size %d > sending socket buffer size %d",
-		 test->settings->blksize, sndbuf_actual);
-	warning(str);
-	rc = 1;
+        char str[WARN_STR_LEN];
+        snprintf(str, sizeof(str),
+                 "Block size %d > sending socket buffer size %d",
+                 test->settings->blksize, sndbuf_actual);
+        warning(str);
+        rc = 1;
     }
 
     /* Read back and verify the receiver socket buffer size */
     optlen = sizeof(rcvbuf_actual);
     if (getsockopt(s, SOL_SOCKET, SO_RCVBUF, &rcvbuf_actual, &optlen) < 0) {
-	i_errno = IESETBUF;
-	return -1;
+        i_errno = IESETBUF;
+        return -1;
     }
     if (test->debug) {
-	printf("RCVBUF is %u, expecting %u\n", rcvbuf_actual, test->settings->socket_bufsize);
+        printf("RCVBUF is %u, expecting %u\n", rcvbuf_actual, test->settings->socket_bufsize);
     }
     if (test->settings->socket_bufsize && test->settings->socket_bufsize > rcvbuf_actual) {
-	i_errno = IESETBUF2;
-	return -1;
+        i_errno = IESETBUF2;
+        return -1;
     }
     if (test->settings->blksize > rcvbuf_actual) {
-	char str[WARN_STR_LEN];
-	snprintf(str, sizeof(str),
-		 "Block size %d > receiving socket buffer size %d",
-		 test->settings->blksize, rcvbuf_actual);
-	warning(str);
-	rc = 1;
+        char str[WARN_STR_LEN];
+        snprintf(str, sizeof(str),
+                 "Block size %d > receiving socket buffer size %d",
+                 test->settings->blksize, rcvbuf_actual);
+        warning(str);
+        rc = 1;
     }
 
     if (test->json_output) {
-	cJSON_AddNumberToObject(test->json_start, "sock_bufsize", test->settings->socket_bufsize);
-	cJSON_AddNumberToObject(test->json_start, "sndbuf_actual", sndbuf_actual);
-	cJSON_AddNumberToObject(test->json_start, "rcvbuf_actual", rcvbuf_actual);
+        cJSON_AddNumberToObject(test->json_start, "sock_bufsize", test->settings->socket_bufsize);
+        cJSON_AddNumberToObject(test->json_start, "sndbuf_actual", sndbuf_actual);
+        cJSON_AddNumberToObject(test->json_start, "rcvbuf_actual", rcvbuf_actual);
     }
 
     return rc;
@@ -361,14 +344,12 @@ iperf_udp_buffercheck(struct iperf_test *test, int s)
  *
  * Accepts a new UDP "connection"
  */
-int
-iperf_udp_accept(struct iperf_test *test)
-{
+int iperf_udp_accept(struct iperf_test *test) {
     struct sockaddr_storage sa_peer;
     unsigned int buf;
     socklen_t len;
-    int       sz, s;
-    int	      rc;
+    int sz, s;
+    int rc;
 
     /*
      * Get the current outstanding socket.  This socket will be used to handle
@@ -382,12 +363,12 @@ iperf_udp_accept(struct iperf_test *test)
      * of the socket to the client.
      */
     len = sizeof(sa_peer);
-    if ((sz = recvfrom(test->prot_listener, &buf, sizeof(buf), 0, (struct sockaddr *) &sa_peer, &len)) < 0) {
+    if ((sz = recvfrom(test->prot_listener, &buf, sizeof(buf), 0, (struct sockaddr *)&sa_peer, &len)) < 0) {
         i_errno = IESTREAMACCEPT;
         return -1;
     }
 
-    if (connect(s, (struct sockaddr *) &sa_peer, len) < 0) {
+    if (connect(s, (struct sockaddr *)&sa_peer, len) < 0) {
         i_errno = IESTREAMACCEPT;
         return -1;
     }
@@ -395,48 +376,48 @@ iperf_udp_accept(struct iperf_test *test)
     /* Check and set socket buffer sizes */
     rc = iperf_udp_buffercheck(test, s);
     if (rc < 0)
-	/* error */
-	return rc;
+        /* error */
+        return rc;
     /*
      * If the socket buffer was too small, but it was the default
      * size, then try explicitly setting it to something larger.
      */
     if (rc > 0) {
-	if (test->settings->socket_bufsize == 0) {
+        if (test->settings->socket_bufsize == 0) {
             char str[WARN_STR_LEN];
-	    int bufsize = test->settings->blksize + UDP_BUFFER_EXTRA;
-	    snprintf(str, sizeof(str), "Increasing socket buffer size to %d",
-	             bufsize);
-	    warning(str);
-	    test->settings->socket_bufsize = bufsize;
-	    rc = iperf_udp_buffercheck(test, s);
-	    if (rc < 0)
-		return rc;
-	}
+            int bufsize = test->settings->blksize + UDP_BUFFER_EXTRA;
+            snprintf(str, sizeof(str), "Increasing socket buffer size to %d",
+                     bufsize);
+            warning(str);
+            test->settings->socket_bufsize = bufsize;
+            rc = iperf_udp_buffercheck(test, s);
+            if (rc < 0)
+                return rc;
+        }
     }
 
 #if defined(HAVE_SO_MAX_PACING_RATE)
     /* If socket pacing is specified, try it. */
     if (test->settings->fqrate) {
-	/* Convert bits per second to bytes per second */
-	unsigned int fqrate = test->settings->fqrate / 8;
-	if (fqrate > 0) {
-	    if (test->debug) {
-		printf("Setting fair-queue socket pacing to %u\n", fqrate);
-	    }
-	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
-		warning("Unable to set socket pacing");
-	    }
-	}
+        /* Convert bits per second to bytes per second */
+        unsigned int fqrate = test->settings->fqrate / 8;
+        if (fqrate > 0) {
+            if (test->debug) {
+                printf("Setting fair-queue socket pacing to %u\n", fqrate);
+            }
+            if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
+                warning("Unable to set socket pacing");
+            }
+        }
     }
 #endif /* HAVE_SO_MAX_PACING_RATE */
     {
-	unsigned int rate = test->settings->rate / 8;
-	if (rate > 0) {
-	    if (test->debug) {
-		printf("Setting application pacing to %u\n", rate);
-	    }
-	}
+        unsigned int rate = test->settings->rate / 8;
+        if (rate > 0) {
+            if (test->debug) {
+                printf("Setting application pacing to %u\n", rate);
+            }
+        }
     }
 
     /*
@@ -461,7 +442,6 @@ iperf_udp_accept(struct iperf_test *test)
     return s;
 }
 
-
 /*
  * iperf_udp_listen
  *
@@ -469,9 +449,7 @@ iperf_udp_accept(struct iperf_test *test)
  * there is no listen(2) for UDP.  This socket will however accept
  * a UDP datagram from a client (indicating the client's presence).
  */
-int
-iperf_udp_listen(struct iperf_test *test)
-{
+int iperf_udp_listen(struct iperf_test *test) {
     int s;
 
     if ((s = netannounce(test->settings->domain, Pudp, test->bind_address, test->bind_dev, test->server_port)) < 0) {
@@ -485,15 +463,12 @@ iperf_udp_listen(struct iperf_test *test)
     return s;
 }
 
-
 /*
  * iperf_udp_connect
  *
  * "Connect" to a UDP stream listener.
  */
-int
-iperf_udp_connect(struct iperf_test *test)
-{
+int iperf_udp_connect(struct iperf_test *test) {
     int s, sz;
     unsigned int buf;
 #ifdef SO_RCVTIMEO
@@ -511,48 +486,48 @@ iperf_udp_connect(struct iperf_test *test)
     /* Check and set socket buffer sizes */
     rc = iperf_udp_buffercheck(test, s);
     if (rc < 0)
-	/* error */
-	return rc;
+        /* error */
+        return rc;
     /*
      * If the socket buffer was too small, but it was the default
      * size, then try explicitly setting it to something larger.
      */
     if (rc > 0) {
-	if (test->settings->socket_bufsize == 0) {
+        if (test->settings->socket_bufsize == 0) {
             char str[WARN_STR_LEN];
-	    int bufsize = test->settings->blksize + UDP_BUFFER_EXTRA;
-	    snprintf(str, sizeof(str), "Increasing socket buffer size to %d",
-	             bufsize);
-	    warning(str);
-	    test->settings->socket_bufsize = bufsize;
-	    rc = iperf_udp_buffercheck(test, s);
-	    if (rc < 0)
-		return rc;
-	}
+            int bufsize = test->settings->blksize + UDP_BUFFER_EXTRA;
+            snprintf(str, sizeof(str), "Increasing socket buffer size to %d",
+                     bufsize);
+            warning(str);
+            test->settings->socket_bufsize = bufsize;
+            rc = iperf_udp_buffercheck(test, s);
+            if (rc < 0)
+                return rc;
+        }
     }
 
 #if defined(HAVE_SO_MAX_PACING_RATE)
     /* If socket pacing is available and not disabled, try it. */
     if (test->settings->fqrate) {
-	/* Convert bits per second to bytes per second */
-	unsigned int fqrate = test->settings->fqrate / 8;
-	if (fqrate > 0) {
-	    if (test->debug) {
-		printf("Setting fair-queue socket pacing to %u\n", fqrate);
-	    }
-	    if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
-		warning("Unable to set socket pacing");
-	    }
-	}
+        /* Convert bits per second to bytes per second */
+        unsigned int fqrate = test->settings->fqrate / 8;
+        if (fqrate > 0) {
+            if (test->debug) {
+                printf("Setting fair-queue socket pacing to %u\n", fqrate);
+            }
+            if (setsockopt(s, SOL_SOCKET, SO_MAX_PACING_RATE, &fqrate, sizeof(fqrate)) < 0) {
+                warning("Unable to set socket pacing");
+            }
+        }
     }
 #endif /* HAVE_SO_MAX_PACING_RATE */
     {
-	unsigned int rate = test->settings->rate / 8;
-	if (rate > 0) {
-	    if (test->debug) {
-		printf("Setting application pacing to %u\n", rate);
-	    }
-	}
+        unsigned int rate = test->settings->rate / 8;
+        if (rate > 0) {
+            if (test->debug) {
+                printf("Setting application pacing to %u\n", rate);
+            }
+        }
     }
 
     /* Set common socket options */
@@ -597,7 +572,7 @@ iperf_udp_connect(struct iperf_test *test)
         i += sz;
     } while (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY && i < max_len_wait_for_reply);
 
-    if (buf != UDP_CONNECT_REPLY  && buf != LEGACY_UDP_CONNECT_REPLY) {
+    if (buf != UDP_CONNECT_REPLY && buf != LEGACY_UDP_CONNECT_REPLY) {
         i_errno = IESTREAMREAD;
         return -1;
     }
@@ -605,13 +580,10 @@ iperf_udp_connect(struct iperf_test *test)
     return s;
 }
 
-
 /* iperf_udp_init
  *
  * initializer for UDP streams in TEST_START
  */
-int
-iperf_udp_init(struct iperf_test *test)
-{
+int iperf_udp_init(struct iperf_test *test) {
     return 0;
 }

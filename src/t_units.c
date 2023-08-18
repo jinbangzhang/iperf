@@ -34,12 +34,10 @@
 #include "iperf.h"
 #include "units.h"
 
-int
-main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     iperf_size_t llu;
-    double    d;
-    char      s[11];
+    double d;
+    char s[11];
 
     assert(1024.0 * 0.5 == unit_atof("0.5K"));
     assert(1024.0 == unit_atof("1K"));
@@ -57,20 +55,20 @@ main(int argc, char **argv)
     assert(1024 == unit_atoi("1K"));
     assert(1024 * 1024 == unit_atoi("1M"));
     d = 4.0 * 1024 * 1024 * 1024;
-    llu = (iperf_size_t) d;
+    llu = (iperf_size_t)d;
     assert(llu == unit_atoi("4G"));
     d = 3.0 * 1024 * 1024 * 1024 * 1024;
-    llu = (iperf_size_t) d;
+    llu = (iperf_size_t)d;
     assert(llu == unit_atoi("3T"));
 
     assert(1024 * 0.5 == unit_atoi("0.5k"));
     assert(1024 == unit_atoi("1k"));
     assert(1024 * 1024 == unit_atoi("1m"));
     d = 4.0 * 1024 * 1024 * 1024;
-    llu = (iperf_size_t) d;
+    llu = (iperf_size_t)d;
     assert(llu == unit_atoi("4g"));
     d = 3.0 * 1024 * 1024 * 1024 * 1024;
-    llu = (iperf_size_t) d;
+    llu = (iperf_size_t)d;
     assert(llu == unit_atoi("3t"));
 
     unit_snprintf(s, 11, 1024.0, 'A');

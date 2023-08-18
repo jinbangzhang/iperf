@@ -48,11 +48,11 @@ double timeval_diff(struct timeval *tv0, struct timeval *tv1);
 
 void cpu_util(double pcpu[3]);
 
-const char* get_system_info(void);
+const char *get_system_info(void);
 
-const char* get_optional_features(void);
+const char *get_optional_features(void);
 
-cJSON* iperf_json_printf(const char *format, ...);
+cJSON *iperf_json_printf(const char *format, ...);
 
 void iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds);
 

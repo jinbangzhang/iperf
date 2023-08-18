@@ -55,8 +55,7 @@
  * Errors are fatal.
  * Returns 0 on success.
  */
-int readentropy(void *out, size_t outsize)
-{
+int readentropy(void *out, size_t outsize) {
     static FILE *frandom;
     static const char rndfile[] = "/dev/urandom";
 
@@ -78,12 +77,10 @@ int readentropy(void *out, size_t outsize)
     return 0;
 }
 
-
 /*
  * Fills buffer with repeating pattern (similar to pattern that used in iperf2)
  */
-void fill_with_repeating_pattern(void *out, size_t outsize)
-{
+void fill_with_repeating_pattern(void *out, size_t outsize) {
     size_t i;
     int counter = 0;
     char *buf = (char *)out;
@@ -99,7 +96,6 @@ void fill_with_repeating_pattern(void *out, size_t outsize)
     }
 }
 
-
 /* make_cookie
  *
  * Generate and return a cookie string
@@ -110,10 +106,8 @@ void fill_with_repeating_pattern(void *out, size_t outsize)
  * Assumes cookie has size (COOKIE_SIZE + 1) char's.
  */
 
-void
-make_cookie(const char *cookie)
-{
-    unsigned char *out = (unsigned char*)cookie;
+void make_cookie(const char *cookie) {
+    unsigned char *out = (unsigned char *)cookie;
     size_t pos;
     static const unsigned char rndchars[] = "abcdefghijklmnopqrstuvwxyz234567";
 
@@ -124,7 +118,6 @@ make_cookie(const char *cookie)
     out[pos] = '\0';
 }
 
-
 /* is_closed
  *
  * Test if the file descriptor fd is closed.
@@ -134,9 +127,7 @@ make_cookie(const char *cookie)
  * in iperf_tcp_accept is not considered an error.
  */
 
-int
-is_closed(int fd)
-{
+int is_closed(int fd) {
     struct timeval tv;
     fd_set readset;
 
@@ -145,17 +136,14 @@ is_closed(int fd)
     tv.tv_sec = 0;
     tv.tv_usec = 0;
 
-    if (select(fd+1, &readset, NULL, NULL, &tv) < 0) {
+    if (select(fd + 1, &readset, NULL, NULL, &tv) < 0) {
         if (errno == EBADF)
             return 1;
     }
     return 0;
 }
 
-
-double
-timeval_to_double(struct timeval * tv)
-{
+double timeval_to_double(struct timeval *tv) {
     double d;
 
     d = tv->tv_sec + tv->tv_usec / 1000000;
@@ -163,18 +151,14 @@ timeval_to_double(struct timeval * tv)
     return d;
 }
 
-int
-timeval_equals(struct timeval * tv0, struct timeval * tv1)
-{
-    if ( tv0->tv_sec == tv1->tv_sec && tv0->tv_usec == tv1->tv_usec )
-	return 1;
+int timeval_equals(struct timeval *tv0, struct timeval *tv1) {
+    if (tv0->tv_sec == tv1->tv_sec && tv0->tv_usec == tv1->tv_usec)
+        return 1;
     else
-	return 0;
+        return 0;
 }
 
-double
-timeval_diff(struct timeval * tv0, struct timeval * tv1)
-{
+double timeval_diff(struct timeval *tv0, struct timeval *tv1) {
     double time1, time2;
 
     time1 = tv0->tv_sec + (tv0->tv_usec / 1000000.0);
@@ -186,9 +170,7 @@ timeval_diff(struct timeval * tv0, struct timeval * tv1)
     return time1;
 }
 
-void
-cpu_util(double pcpu[3])
-{
+void cpu_util(double pcpu[3]) {
     static struct iperf_time last;
     static clock_t clast;
     static struct rusage rlast;
@@ -202,7 +184,7 @@ cpu_util(double pcpu[3])
     if (pcpu == NULL) {
         iperf_time_now(&last);
         clast = clock();
-	getrusage(RUSAGE_SELF, &rlast);
+        getrusage(RUSAGE_SELF, &rlast);
         return;
     }
 
@@ -213,35 +195,28 @@ cpu_util(double pcpu[3])
     iperf_time_diff(&now, &last, &temp_time);
     timediff = iperf_time_in_usecs(&temp_time);
 
-    userdiff = ((rtemp.ru_utime.tv_sec * 1000000.0 + rtemp.ru_utime.tv_usec) -
-                (rlast.ru_utime.tv_sec * 1000000.0 + rlast.ru_utime.tv_usec));
-    systemdiff = ((rtemp.ru_stime.tv_sec * 1000000.0 + rtemp.ru_stime.tv_usec) -
-                  (rlast.ru_stime.tv_sec * 1000000.0 + rlast.ru_stime.tv_usec));
+    userdiff = ((rtemp.ru_utime.tv_sec * 1000000.0 + rtemp.ru_utime.tv_usec) - (rlast.ru_utime.tv_sec * 1000000.0 + rlast.ru_utime.tv_usec));
+    systemdiff = ((rtemp.ru_stime.tv_sec * 1000000.0 + rtemp.ru_stime.tv_usec) - (rlast.ru_stime.tv_sec * 1000000.0 + rlast.ru_stime.tv_usec));
 
     pcpu[0] = (((ctemp - clast) * 1000000.0 / CLOCKS_PER_SEC) / timediff) * 100;
     pcpu[1] = (userdiff / timediff) * 100;
     pcpu[2] = (systemdiff / timediff) * 100;
 }
 
-const char *
-get_system_info(void)
-{
+const char * get_system_info(void) {
     static char buf[1024];
-    struct utsname  uts;
+    struct utsname uts;
 
     memset(buf, 0, 1024);
     uname(&uts);
 
     snprintf(buf, sizeof(buf), "%s %s %s %s %s", uts.sysname, uts.nodename,
-	     uts.release, uts.version, uts.machine);
+             uts.release, uts.version, uts.machine);
 
     return buf;
 }
 
-
-const char *
-get_optional_features(void)
-{
+const char * get_optional_features(void) {
     static char features[1024];
     unsigned int numfeatures = 0;
 
@@ -249,97 +224,97 @@ get_optional_features(void)
 
 #if defined(HAVE_CPU_AFFINITY)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "CPU affinity setting",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_CPU_AFFINITY */
 
 #if defined(HAVE_FLOWLABEL)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "IPv6 flow label",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_FLOWLABEL */
 
 #if defined(HAVE_SCTP_H)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "SCTP",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_SCTP_H */
 
 #if defined(HAVE_TCP_CONGESTION)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "TCP congestion algorithm setting",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_TCP_CONGESTION */
 
 #if defined(HAVE_SENDFILE)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "sendfile / zerocopy",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_SENDFILE */
 
 #if defined(HAVE_SO_MAX_PACING_RATE)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "socket pacing",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_SO_MAX_PACING_RATE */
 
 #if defined(HAVE_SSL)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "authentication",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_SSL */
 
 #if defined(HAVE_SO_BINDTODEVICE)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "bind to device",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_SO_BINDTODEVICE */
 
 #if defined(HAVE_DONT_FRAGMENT)
     if (numfeatures > 0) {
-	strncat(features, ", ",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, ", ",
+                sizeof(features) - strlen(features) - 1);
     }
     strncat(features, "support IPv4 don't fragment",
-	sizeof(features) - strlen(features) - 1);
+            sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_DONT_FRAGMENT */
 
     if (numfeatures == 0) {
-	strncat(features, "None",
-		sizeof(features) - strlen(features) - 1);
+        strncat(features, "None",
+                sizeof(features) - strlen(features) - 1);
     }
 
     return features;
@@ -363,15 +338,13 @@ get_optional_features(void)
 ** This routine is not particularly robust, but it's not part of the API,
 ** it's just for internal iperf3 use.
 */
-cJSON*
-iperf_json_printf(const char *format, ...)
-{
-    cJSON* o;
+cJSON * iperf_json_printf(const char *format, ...) {
+    cJSON *o;
     va_list argp;
     const char *cp;
     char name[100];
-    char* np;
-    cJSON* j;
+    char *np;
+    cJSON *j;
 
     o = cJSON_CreateObject();
     if (o == NULL)
@@ -379,51 +352,49 @@ iperf_json_printf(const char *format, ...)
     va_start(argp, format);
     np = name;
     for (cp = format; *cp != '\0'; ++cp) {
-	switch (*cp) {
-	    case ' ':
-	    break;
-	    case ':':
-	    *np = '\0';
-	    break;
-	    case '%':
-	    ++cp;
-	    switch (*cp) {
-		case 'b':
-		j = cJSON_CreateBool(va_arg(argp, int));
-		break;
-		case 'd':
-		j = cJSON_CreateNumber(va_arg(argp, int64_t));
-		break;
-		case 'f':
-		j = cJSON_CreateNumber(va_arg(argp, double));
-		break;
-		case 's':
-		j = cJSON_CreateString(va_arg(argp, char *));
-		break;
-		default:
-		va_end(argp);
-		return NULL;
-	    }
-	    if (j == NULL) {
-	    	va_end(argp);
-	    	return NULL;
-	    }
-	    cJSON_AddItemToObject(o, name, j);
-	    np = name;
-	    break;
-	    default:
-	    *np++ = *cp;
-	    break;
-	}
+        switch (*cp) {
+        case ' ':
+            break;
+        case ':':
+            *np = '\0';
+            break;
+        case '%':
+            ++cp;
+            switch (*cp) {
+            case 'b':
+                j = cJSON_CreateBool(va_arg(argp, int));
+                break;
+            case 'd':
+                j = cJSON_CreateNumber(va_arg(argp, int64_t));
+                break;
+            case 'f':
+                j = cJSON_CreateNumber(va_arg(argp, double));
+                break;
+            case 's':
+                j = cJSON_CreateString(va_arg(argp, char *));
+                break;
+            default:
+                va_end(argp);
+                return NULL;
+            }
+            if (j == NULL) {
+                va_end(argp);
+                return NULL;
+            }
+            cJSON_AddItemToObject(o, name, j);
+            np = name;
+            break;
+        default:
+            *np++ = *cp;
+            break;
+        }
     }
     va_end(argp);
     return o;
 }
 
 /* Debugging routine to dump out an fd_set. */
-void
-iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds)
-{
+void iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds) {
     int fd;
     int comma;
 
@@ -431,11 +402,11 @@ iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds)
     comma = 0;
     for (fd = 0; fd < nfds; ++fd) {
         if (FD_ISSET(fd, fds)) {
-	    if (comma)
-		fprintf(fp, ", ");
-	    fprintf(fp, "%d", fd);
-	    comma = 1;
-	}
+            if (comma)
+                fprintf(fp, ", ");
+            fprintf(fp, "%d", fd);
+            comma = 1;
+        }
     }
     fprintf(fp, "]\n");
 }
@@ -445,8 +416,7 @@ iperf_dump_fdset(FILE *fp, const char *str, int nfds, fd_set *fds)
  * Cobbled together from various daemon(3) implementations,
  * not intended to be general-purpose. */
 #ifndef HAVE_DAEMON
-int daemon(int nochdir, int noclose)
-{
+int daemon(int nochdir, int noclose) {
     pid_t pid = 0;
     pid_t sid = 0;
     int fd;
@@ -462,16 +432,16 @@ int daemon(int nochdir, int noclose)
 
     pid = fork();
     if (pid < 0) {
-	    return -1;
+        return -1;
     }
     if (pid > 0) {
-	/* Use _exit() to avoid doing atexit() stuff. */
-	_exit(0);
+        /* Use _exit() to avoid doing atexit() stuff. */
+        _exit(0);
     }
 
     sid = setsid();
     if (sid < 0) {
-	return -1;
+        return -1;
     }
 
     /*
@@ -482,22 +452,22 @@ int daemon(int nochdir, int noclose)
      */
     pid = fork();
     if (pid == -1) {
-	return -1;
+        return -1;
     } else if (pid != 0) {
-	_exit(0);
+        _exit(0);
     }
 
     if (!nochdir) {
-	chdir("/");
+        chdir("/");
     }
 
     if (!noclose && (fd = open("/dev/null", O_RDWR, 0)) != -1) {
-	dup2(fd, STDIN_FILENO);
-	dup2(fd, STDOUT_FILENO);
-	dup2(fd, STDERR_FILENO);
-	if (fd > 2) {
-	    close(fd);
-	}
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > 2) {
+            close(fd);
+        }
     }
     return (0);
 }
@@ -535,53 +505,49 @@ int daemon(int nochdir, int noclose)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-ssize_t
-getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp)
-{
-	char *ptr, *eptr;
+ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
+    char *ptr, *eptr;
 
+    if (*buf == NULL || *bufsiz == 0) {
+        *bufsiz = BUFSIZ;
+        if ((*buf = malloc(*bufsiz)) == NULL)
+            return -1;
+    }
 
-	if (*buf == NULL || *bufsiz == 0) {
-		*bufsiz = BUFSIZ;
-		if ((*buf = malloc(*bufsiz)) == NULL)
-			return -1;
-	}
-
-	for (ptr = *buf, eptr = *buf + *bufsiz;;) {
-		int c = fgetc(fp);
-		if (c == -1) {
-			if (feof(fp)) {
-				ssize_t diff = (ssize_t)(ptr - *buf);
-				if (diff != 0) {
-					*ptr = '\0';
-					return diff;
-				}
-			}
-			return -1;
-		}
-		*ptr++ = c;
-		if (c == delimiter) {
-			*ptr = '\0';
-			return ptr - *buf;
-		}
-		if (ptr + 2 >= eptr) {
-			char *nbuf;
-			size_t nbufsiz = *bufsiz * 2;
-			ssize_t d = ptr - *buf;
-			if ((nbuf = realloc(*buf, nbufsiz)) == NULL)
-				return -1;
-			*buf = nbuf;
-			*bufsiz = nbufsiz;
-			eptr = nbuf + nbufsiz;
-			ptr = nbuf + d;
-		}
-	}
+    for (ptr = *buf, eptr = *buf + *bufsiz;;) {
+        int c = fgetc(fp);
+        if (c == -1) {
+            if (feof(fp)) {
+                ssize_t diff = (ssize_t)(ptr - *buf);
+                if (diff != 0) {
+                    *ptr = '\0';
+                    return diff;
+                }
+            }
+            return -1;
+        }
+        *ptr++ = c;
+        if (c == delimiter) {
+            *ptr = '\0';
+            return ptr - *buf;
+        }
+        if (ptr + 2 >= eptr) {
+            char *nbuf;
+            size_t nbufsiz = *bufsiz * 2;
+            ssize_t d = ptr - *buf;
+            if ((nbuf = realloc(*buf, nbufsiz)) == NULL)
+                return -1;
+            *buf = nbuf;
+            *bufsiz = nbufsiz;
+            eptr = nbuf + nbufsiz;
+            ptr = nbuf + d;
+        }
+    }
 }
 
 ssize_t
-getline(char **buf, size_t *bufsiz, FILE *fp)
-{
-	return getdelim(buf, bufsiz, '\n', fp);
+getline(char **buf, size_t *bufsiz, FILE *fp) {
+    return getdelim(buf, bufsiz, '\n', fp);
 }
 
 #endif

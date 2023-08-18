@@ -46,9 +46,7 @@
 #if defined(HAVE_SSL)
 int test_authtoken(const char *authUser, const char *authPassword, EVP_PKEY *pubkey, EVP_PKEY *privkey);
 
-int
-main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     /* sha256 */
     void sha256(const char *string, char outputBuffer[65]);
     const char sha256String[] = "This is a SHA256 test.";
@@ -59,17 +57,17 @@ main(int argc, char **argv)
     assert(strcmp(sha256Output, sha256Digest) == 0);
 
     /* Base64{Encode,Decode} */
-    int Base64Encode(const unsigned char* buffer, const size_t length, char** b64text);
-    int Base64Decode(const char* b64message, unsigned char** buffer, size_t* length);
+    int Base64Encode(const unsigned char *buffer, const size_t length, char **b64text);
+    int Base64Decode(const char *b64message, unsigned char **buffer, size_t *length);
     const char base64String[] = "This is a Base64 test.";
     char *base64Text;
     char *base64Decode;
     size_t base64DecodeLength;
     const char base64EncodeCheck[] = "VGhpcyBpcyBhIEJhc2U2NCB0ZXN0Lg=="; /* echo -n "This is a Base64 test." | b64encode -r - */
 
-    assert(Base64Encode((unsigned char *) base64String, strlen(base64String), &base64Text) == 0);
+    assert(Base64Encode((unsigned char *)base64String, strlen(base64String), &base64Text) == 0);
     assert(strcmp(base64Text, base64EncodeCheck) == 0);
-    assert(Base64Decode(base64Text, (unsigned char **) &base64Decode, &base64DecodeLength) == 0);
+    assert(Base64Decode(base64Text, (unsigned char **)&base64Decode, &base64DecodeLength) == 0);
     assert(strcmp(base64String, base64Decode) == 0);
 
     /* public/private key tests */
@@ -96,8 +94,7 @@ main(int argc, char **argv)
     return 0;
 }
 
-int
-test_authtoken(const char *authUser, const char *authPassword, EVP_PKEY *pubkey, EVP_PKEY *privkey) {
+int test_authtoken(const char *authUser, const char *authPassword, EVP_PKEY *pubkey, EVP_PKEY *privkey) {
     char *authToken;
     char *decodeUser;
     char *decodePassword;
@@ -117,9 +114,7 @@ test_authtoken(const char *authUser, const char *authPassword, EVP_PKEY *pubkey,
     return 0;
 }
 #else
-int
-main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     return 0;
 }
 #endif /* HAVE_SSL */
