@@ -262,8 +262,7 @@ const char *label_bit[] =
  * (4 digits + space + 5 chars max + null)
  * ------------------------------------------------------------------- */
 
-void unit_snprintf(char *s, int inLen,
-                   double inNum, char inFormat) {
+void unit_snprintf(char *s, int inLen, double inNum, char inFormat) {
     int conv;
     const char *suffix;
     const char *format;

@@ -46,11 +46,6 @@
 #endif
 #include <net/if.h> // for IFNAMSIZ
 
-#if defined(HAVE_CPUSET_SETAFFINITY)
-#include <sys/param.h>
-#include <sys/cpuset.h>
-#endif /* HAVE_CPUSET_SETAFFINITY */
-
 #if defined(HAVE_INTTYPES_H)
 #include <inttypes.h>
 #else
@@ -67,11 +62,6 @@
 #include "queue.h"
 #include "cjson.h"
 #include "iperf_time.h"
-
-#if defined(HAVE_SSL)
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-#endif // HAVE_SSL
 
 #if !defined(__IPERF_API_H)
 typedef uint64_t iperf_size_t;
@@ -153,12 +143,6 @@ struct iperf_settings {
     char unit_format;                     /* -f */
     int num_ostreams;                     /* SCTP initmsg settings */
     int dont_fragment;                    /* Whether to set IP flag Do-Not_Fragment */
-#if defined(HAVE_SSL)
-    char *authtoken; /* Authentication token */
-    char *client_username;
-    char *client_password;
-    EVP_PKEY *client_rsa_pubkey;
-#endif                             // HAVE_SSL
     int connect_timeout;           /* socket connection timeout, in ms */
     int idle_timeout;              /* server idle time timeout */
     unsigned int snd_timeout;      /* Timeout for sending tcp messages in active mode, in us */
@@ -238,12 +222,6 @@ struct iperf_textline {
     TAILQ_ENTRY(iperf_textline) textlineentries;
 };
 
-struct xbind_entry {
-    char *name;
-    struct addrinfo *ai;
-    TAILQ_ENTRY(xbind_entry) link;
-};
-
 enum iperf_mode {
     SENDER = 1,
     RECEIVER = 0,
@@ -269,22 +247,16 @@ struct iperf_test {
     char *tmp_template;
     char *bind_address; /* first -B option */
     char *bind_dev;     /* bind to network device */
-    TAILQ_HEAD(xbind_addrhead, xbind_entry) xbind_addrs;   /* all -X opts */
     int bind_port; /* --cport option */
     int server_port;
     int omit;                      /* duration of omit period (-O flag) */
     int duration;                  /* total duration of test (-t flag) */
     char *diskfile_name;           /* -F option */
-    int affinity, server_affinity; /* -A option */
-#if defined(HAVE_CPUSET_SETAFFINITY)
-    cpuset_t cpumask;
-#endif                            /* HAVE_CPUSET_SETAFFINITY */
     char *title;                  /* -T option */
     char *extra_data;             /* --extra-data */
     char *congestion;             /* -C option */
     char *congestion_used;        /* what was actually used */
     char *remote_congestion_used; /* what the other side used */
-    char *pidfile;                /* -P option */
 
     char *logfile; /* --logfile option */
     FILE *outfile;
@@ -296,20 +268,12 @@ struct iperf_test {
 
     int ctrl_sck_mss; /* MSS for the control channel */
 
-#if defined(HAVE_SSL)
-    char *server_authorized_users;
-    EVP_PKEY *server_rsa_private_key;
-    int server_skew_threshold;
-#endif // HAVE_SSL
-
     /* boolean variables for Options */
     int daemon;                   /* -D option */
-    int one_off;                  /* -1 option */
     int no_delay;                 /* -N option */
     int reverse;                  /* -R option */
     int bidirectional;            /* --bidirectional */
     int verbose;                  /* -V option - verbose mode */
-    int json_output;              /* -J option - JSON output */
     int zerocopy;                 /* -Z option - use sendfile */
     int debug;                    /* -d option - enable debug */
     enum debug_level debug_level; /* -d option option - level of debug messages to show */
@@ -321,7 +285,6 @@ struct iperf_test {
     int timestamps;        /* --timestamps */
     char *timestamp_format;
 
-    char *json_output_string; /* rendered JSON output if json_output is set */
     /* Select related parameters */
     int max_fd;
     fd_set read_set;  /* set of read sockets */

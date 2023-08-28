@@ -137,15 +137,12 @@ int iperf_get_test_server_port(struct iperf_test *ipt);
 char *iperf_get_test_server_hostname(struct iperf_test *ipt);
 char *iperf_get_test_template(struct iperf_test *ipt);
 int iperf_get_test_protocol_id(struct iperf_test *ipt);
-int iperf_get_test_json_output(struct iperf_test *ipt);
-char *iperf_get_test_json_output_string(struct iperf_test *ipt);
 int iperf_get_test_zerocopy(struct iperf_test *ipt);
 int iperf_get_test_get_server_output(struct iperf_test *ipt);
 char iperf_get_test_unit_format(struct iperf_test *ipt);
 char *iperf_get_test_bind_address(struct iperf_test *ipt);
 char *iperf_get_test_bind_dev(struct iperf_test *ipt);
 int iperf_get_test_udp_counters_64bit(struct iperf_test *ipt);
-int iperf_get_test_one_off(struct iperf_test *ipt);
 int iperf_get_test_tos(struct iperf_test *ipt);
 char *iperf_get_extra_data(struct iperf_test *ipt);
 char *iperf_get_iperf_version(void);
@@ -182,7 +179,6 @@ void iperf_set_test_role(struct iperf_test *ipt, char role);
 void iperf_set_test_server_hostname(struct iperf_test *ipt, const char *server_hostname);
 void iperf_set_test_template(struct iperf_test *ipt, const char *tmp_template);
 void iperf_set_test_reverse(struct iperf_test *ipt, int reverse);
-void iperf_set_test_json_output(struct iperf_test *ipt, int json_output);
 int iperf_has_zerocopy(void);
 void iperf_set_test_zerocopy(struct iperf_test *ipt, int zerocopy);
 void iperf_set_test_get_server_output(struct iperf_test *ipt, int get_server_output);
@@ -190,7 +186,6 @@ void iperf_set_test_unit_format(struct iperf_test *ipt, char unit_format);
 void iperf_set_test_bind_address(struct iperf_test *ipt, const char *bind_address);
 void iperf_set_test_bind_dev(struct iperf_test *ipt, const char *bnd_dev);
 void iperf_set_test_udp_counters_64bit(struct iperf_test *ipt, int udp_counters_64bit);
-void iperf_set_test_one_off(struct iperf_test *ipt, int one_off);
 void iperf_set_test_tos(struct iperf_test *ipt, int tos);
 void iperf_set_test_extra_data(struct iperf_test *ipt, const char *dat);
 void iperf_set_test_bidirectional(struct iperf_test *ipt, int bidirectional);
@@ -199,15 +194,6 @@ void iperf_set_dont_fragment(struct iperf_test *ipt, int dont_fragment);
 void iperf_set_test_congestion_control(struct iperf_test *ipt, char *cc);
 void iperf_set_test_mss(struct iperf_test *ipt, int mss);
 void iperf_set_mapped_v4(struct iperf_test *ipt, const int val);
-
-#if defined(HAVE_SSL)
-void iperf_set_test_client_username(struct iperf_test *ipt, const char *client_username);
-void iperf_set_test_client_password(struct iperf_test *ipt, const char *client_password);
-void iperf_set_test_client_rsa_pubkey(struct iperf_test *ipt, const char *client_rsa_pubkey_base64);
-void iperf_set_test_server_authorized_users(struct iperf_test *ipt, const char *server_authorized_users);
-void iperf_set_test_server_skew_threshold(struct iperf_test *ipt, int server_skew_threshold);
-void iperf_set_test_server_rsa_privkey(struct iperf_test *ipt, const char *server_rsa_privkey_base64);
-#endif // HAVE_SSL
 
 void iperf_set_test_connect_timeout(struct iperf_test *ipt, int ct);
 
@@ -343,17 +329,7 @@ int iperf_run_server(struct iperf_test *);
 int iperf_server_listen(struct iperf_test *);
 int iperf_accept(struct iperf_test *);
 int iperf_handle_message_server(struct iperf_test *);
-int iperf_create_pidfile(struct iperf_test *);
-int iperf_delete_pidfile(struct iperf_test *);
 void iperf_check_total_rate(struct iperf_test *, iperf_size_t);
-
-/* JSON output routines. */
-int iperf_json_start(struct iperf_test *);
-int iperf_json_finish(struct iperf_test *);
-
-/* CPU affinity routines */
-int iperf_setaffinity(struct iperf_test *, int affinity);
-int iperf_clearaffinity(struct iperf_test *);
 
 /* Custom printf routine. */
 int iperf_printf(struct iperf_test *test, const char *format, ...) __attribute__((format(printf, 2, 3)));

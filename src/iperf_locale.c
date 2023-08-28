@@ -98,11 +98,7 @@ const char usage_longstr[] = "Usage: iperf3 [-s|-c host] [options]\n"
                              "  -p, --port      #         server port to listen on/connect to\n"
                              "  -f, --format   [kmgtKMGT] format to report: Kbits, Mbits, Gbits, Tbits\n"
                              "  -i, --interval  #         seconds between periodic throughput reports\n"
-                             "  -I, --pidfile file        write PID file\n"
                              "  -F, --file name           xmit/recv the specified file\n"
-#if defined(HAVE_CPU_AFFINITY)
-                             "  -A, --affinity n/n,m      set CPU affinity\n"
-#endif /* HAVE_CPU_AFFINITY */
 #if defined(HAVE_SO_BINDTODEVICE)
                              "  -B, --bind <host>[%%<dev>] bind to the interface associated with the address <host>\n"
                              "                            (optional <dev> equivalent to `--bind-dev <dev>`)\n"
@@ -111,7 +107,6 @@ const char usage_longstr[] = "Usage: iperf3 [-s|-c host] [options]\n"
                              "  -B, --bind      <host>    bind to the interface associated with the address <host>\n"
 #endif /* HAVE_SO_BINDTODEVICE */
                              "  -V, --verbose             more detailed output\n"
-                             "  -J, --json                output in JSON format\n"
                              "  --logfile f               send output to a log file\n"
                              "  --forceflush              force flushing output at every interval\n"
                              "  --timestamps<=format>     emit a timestamp at the start of each output line\n"
@@ -129,28 +124,14 @@ const char usage_longstr[] = "Usage: iperf3 [-s|-c host] [options]\n"
                              "Server specific:\n"
                              "  -s, --server              run in server mode\n"
                              "  -D, --daemon              run the server as a daemon\n"
-                             "  -1, --one-off             handle one client connection then exit\n"
                              "  --server-bitrate-limit #[KMG][/#]   server's total bit rate limit (default 0 = no limit)\n"
                              "                            (optional slash and number of secs interval for averaging\n"
                              "                            total data rate.  Default is 5 seconds)\n"
                              "  --idle-timeout #          restart idle server after # seconds in case it\n"
                              "                            got stuck (default - no timeout)\n"
-#if defined(HAVE_SSL)
-                             "  --rsa-private-key-path    path to the RSA private key used to decrypt\n"
-                             "                            authentication credentials\n"
-                             "  --authorized-users-path   path to the configuration file containing user\n"
-                             "                            credentials\n"
-                             "  --time-skew-threshold     time skew threshold (in seconds) between the server\n"
-                             "                            and client during the authentication process\n"
-#endif // HAVE_SSL
                              "Client specific:\n"
                              "  -c, --client <host>[%%<dev>] run in client mode, connecting to <host>\n"
                              "                              (option <dev> equivalent to `--bind-dev <dev>`)\n"
-#if defined(HAVE_SCTP_H)
-                             "  --sctp                    use SCTP rather than TCP\n"
-                             "  -X, --xbind <name>        bind SCTP association to links\n"
-                             "  --nstreams      #         number of SCTP streams\n"
-#endif /* HAVE_SCTP_H */
                              "  -u, --udp                 use UDP rather than TCP\n"
                              "  --connect-timeout #       timeout for control connection setup (ms)\n"
                              "  -b, --bitrate #[KMG][/#]  target bitrate in bits/sec (0 for unlimited)\n"
@@ -221,17 +202,6 @@ const char usage_longstr[] = "Usage: iperf3 [-s|-c host] [options]\n"
                              "Report bugs to:     " PACKAGE_BUGREPORT "\n"
 #endif /* PACKAGE_BUGREPORT */
     ;
-
-#ifdef OBSOLETE /* from old iperf: no longer supported. Add some of these back someday */
-"-d, --dualtest           Do a bidirectional test simultaneously\n"
-    "-L, --listenport #       port to receive bidirectional tests back on\n"
-    "-I, --stdin              input the data to be transmitted from stdin\n"
-    "-F, --fileinput <name>   input the data to be transmitted from a file\n"
-    "-r, --tradeoff           Do a bidirectional test individually\n"
-    "-T, --ttl       #        time-to-live, for multicast (default 1)\n"
-    "-x, --reportexclude [CDMSV]   exclude C(connection) D(data) M(multicast) S(settings) V(server) reports\n"
-    "-y, --reportstyle C      report as a Comma-Separated Values\n"
-#endif
 
     const char version[] = PACKAGE_STRING;
 

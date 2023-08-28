@@ -330,12 +330,6 @@ int iperf_udp_buffercheck(struct iperf_test *test, int s) {
         rc = 1;
     }
 
-    if (test->json_output) {
-        cJSON_AddNumberToObject(test->json_start, "sock_bufsize", test->settings->socket_bufsize);
-        cJSON_AddNumberToObject(test->json_start, "sndbuf_actual", sndbuf_actual);
-        cJSON_AddNumberToObject(test->json_start, "rcvbuf_actual", rcvbuf_actual);
-    }
-
     return rc;
 }
 

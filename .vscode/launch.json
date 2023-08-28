@@ -5,7 +5,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/src/.libs/iperf3",
-            "args": ["-c", "212.64.43.124", "-u", "-b", "200M", "-l", "8192", "-t", "10"],
+            "args": ["-c", "127.0.0.1", "-u", "-b", "200M", "-l", "1440", "-t", "10"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

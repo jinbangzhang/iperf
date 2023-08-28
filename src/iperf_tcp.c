@@ -337,12 +337,6 @@ int iperf_tcp_listen(struct iperf_test *test) {
         return -1;
     }
 
-    if (test->json_output) {
-        cJSON_AddNumberToObject(test->json_start, "sock_bufsize", test->settings->socket_bufsize);
-        cJSON_AddNumberToObject(test->json_start, "sndbuf_actual", sndbuf_actual);
-        cJSON_AddNumberToObject(test->json_start, "rcvbuf_actual", rcvbuf_actual);
-    }
-
     return s;
 }
 
@@ -453,12 +447,6 @@ int iperf_tcp_connect(struct iperf_test *test) {
     if (test->settings->socket_bufsize && test->settings->socket_bufsize > rcvbuf_actual) {
         i_errno = IESETBUF2;
         return -1;
-    }
-
-    if (test->json_output) {
-        cJSON_AddNumberToObject(test->json_start, "sock_bufsize", test->settings->socket_bufsize);
-        cJSON_AddNumberToObject(test->json_start, "sndbuf_actual", sndbuf_actual);
-        cJSON_AddNumberToObject(test->json_start, "rcvbuf_actual", rcvbuf_actual);
     }
 
 #if defined(HAVE_FLOWLABEL)

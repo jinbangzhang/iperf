@@ -222,16 +222,6 @@ const char * get_optional_features(void) {
 
     snprintf(features, sizeof(features), "Optional features available: ");
 
-#if defined(HAVE_CPU_AFFINITY)
-    if (numfeatures > 0) {
-        strncat(features, ", ",
-                sizeof(features) - strlen(features) - 1);
-    }
-    strncat(features, "CPU affinity setting",
-            sizeof(features) - strlen(features) - 1);
-    numfeatures++;
-#endif /* HAVE_CPU_AFFINITY */
-
 #if defined(HAVE_FLOWLABEL)
     if (numfeatures > 0) {
         strncat(features, ", ",
@@ -241,16 +231,6 @@ const char * get_optional_features(void) {
             sizeof(features) - strlen(features) - 1);
     numfeatures++;
 #endif /* HAVE_FLOWLABEL */
-
-#if defined(HAVE_SCTP_H)
-    if (numfeatures > 0) {
-        strncat(features, ", ",
-                sizeof(features) - strlen(features) - 1);
-    }
-    strncat(features, "SCTP",
-            sizeof(features) - strlen(features) - 1);
-    numfeatures++;
-#endif /* HAVE_SCTP_H */
 
 #if defined(HAVE_TCP_CONGESTION)
     if (numfeatures > 0) {
@@ -282,16 +262,6 @@ const char * get_optional_features(void) {
     numfeatures++;
 #endif /* HAVE_SO_MAX_PACING_RATE */
 
-#if defined(HAVE_SSL)
-    if (numfeatures > 0) {
-        strncat(features, ", ",
-                sizeof(features) - strlen(features) - 1);
-    }
-    strncat(features, "authentication",
-            sizeof(features) - strlen(features) - 1);
-    numfeatures++;
-#endif /* HAVE_SSL */
-
 #if defined(HAVE_SO_BINDTODEVICE)
     if (numfeatures > 0) {
         strncat(features, ", ",
@@ -318,79 +288,6 @@ const char * get_optional_features(void) {
     }
 
     return features;
-}
-
-/* Helper routine for building cJSON objects in a printf-like manner.
-**
-** Sample call:
-**   j = iperf_json_printf("foo: %b  bar: %d  bletch: %f  eep: %s", b, i, f, s);
-**
-** The four formatting characters and the types they expect are:
-**   %b  boolean           int
-**   %d  integer           int64_t
-**   %f  floating point    double
-**   %s  string            char *
-** If the values you're passing in are not these exact types, you must
-** cast them, there is no automatic type coercion/widening here.
-**
-** The colons mark the end of field names, and blanks are ignored.
-**
-** This routine is not particularly robust, but it's not part of the API,
-** it's just for internal iperf3 use.
-*/
-cJSON * iperf_json_printf(const char *format, ...) {
-    cJSON *o;
-    va_list argp;
-    const char *cp;
-    char name[100];
-    char *np;
-    cJSON *j;
-
-    o = cJSON_CreateObject();
-    if (o == NULL)
-        return NULL;
-    va_start(argp, format);
-    np = name;
-    for (cp = format; *cp != '\0'; ++cp) {
-        switch (*cp) {
-        case ' ':
-            break;
-        case ':':
-            *np = '\0';
-            break;
-        case '%':
-            ++cp;
-            switch (*cp) {
-            case 'b':
-                j = cJSON_CreateBool(va_arg(argp, int));
-                break;
-            case 'd':
-                j = cJSON_CreateNumber(va_arg(argp, int64_t));
-                break;
-            case 'f':
-                j = cJSON_CreateNumber(va_arg(argp, double));
-                break;
-            case 's':
-                j = cJSON_CreateString(va_arg(argp, char *));
-                break;
-            default:
-                va_end(argp);
-                return NULL;
-            }
-            if (j == NULL) {
-                va_end(argp);
-                return NULL;
-            }
-            cJSON_AddItemToObject(o, name, j);
-            np = name;
-            break;
-        default:
-            *np++ = *cp;
-            break;
-        }
-    }
-    va_end(argp);
-    return o;
 }
 
 /* Debugging routine to dump out an fd_set. */

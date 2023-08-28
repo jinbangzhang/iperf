@@ -58,15 +58,6 @@
 #include <stdarg.h>
 #include <math.h>
 
-#if defined(HAVE_CPUSET_SETAFFINITY)
-#include <sys/param.h>
-#include <sys/cpuset.h>
-#endif /* HAVE_CPUSET_SETAFFINITY */
-
-#if defined(__CYGWIN__) || defined(_WIN32) || defined(_WIN64) || defined(__WINDOWS__)
-#define CPU_SETSIZE __CPU_SETSIZE
-#endif /* __CYGWIN__, _WIN32, _WIN64, __WINDOWS__ */
-
 #if defined(HAVE_SETPROCESSAFFINITYMASK)
 #include <Windows.h>
 #endif /* HAVE_SETPROCESSAFFINITYMASK */
@@ -76,9 +67,6 @@
 #include "iperf_api.h"
 #include "iperf_udp.h"
 #include "iperf_tcp.h"
-#if defined(HAVE_SCTP_H)
-#include "iperf_sctp.h"
-#endif /* HAVE_SCTP_H */
 #include "timer.h"
 
 #include "cjson.h"
@@ -86,11 +74,6 @@
 #include "iperf_util.h"
 #include "iperf_locale.h"
 #include "version.h"
-#if defined(HAVE_SSL)
-#include <openssl/bio.h>
-#include <openssl/err.h>
-#include "iperf_auth.h"
-#endif /* HAVE_SSL */
 
 /* Forwards. */
 static int send_parameters(struct iperf_test *test);
@@ -100,7 +83,7 @@ static int get_results(struct iperf_test *test);
 static int diskfile_send(struct iperf_stream *sp);
 static int diskfile_recv(struct iperf_stream *sp);
 static int JSON_write(int fd, cJSON *json);
-static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp, cJSON *json_interval_streams);
+static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp);
 static cJSON *JSON_read(int fd);
 
 /*************************** Print usage functions ****************************/
@@ -243,14 +226,6 @@ int iperf_get_test_protocol_id(struct iperf_test *ipt) {
     return ipt->protocol->id;
 }
 
-int iperf_get_test_json_output(struct iperf_test *ipt) {
-    return ipt->json_output;
-}
-
-char * iperf_get_test_json_output_string(struct iperf_test *ipt) {
-    return ipt->json_output_string;
-}
-
 int iperf_get_test_zerocopy(struct iperf_test *ipt) {
     return ipt->zerocopy;
 }
@@ -273,10 +248,6 @@ char * iperf_get_test_bind_dev(struct iperf_test *ipt) {
 
 int iperf_get_test_udp_counters_64bit(struct iperf_test *ipt) {
     return ipt->udp_counters_64bit;
-}
-
-int iperf_get_test_one_off(struct iperf_test *ipt) {
-    return ipt->one_off;
 }
 
 int iperf_get_test_tos(struct iperf_test *ipt) {
@@ -430,8 +401,7 @@ void iperf_set_mapped_v4(struct iperf_test *ipt, const int val) {
     ipt->mapped_v4 = val;
 }
 
-static void
-check_sender_has_retransmits(struct iperf_test *ipt) {
+static void check_sender_has_retransmits(struct iperf_test *ipt) {
     if (ipt->mode != RECEIVER && ipt->protocol->id == Ptcp && has_tcpinfo_retransmits())
         ipt->sender_has_retransmits = 1;
     else
@@ -480,10 +450,6 @@ void iperf_set_test_reverse(struct iperf_test *ipt, int reverse) {
     check_sender_has_retransmits(ipt);
 }
 
-void iperf_set_test_json_output(struct iperf_test *ipt, int json_output) {
-    ipt->json_output = json_output;
-}
-
 int iperf_has_zerocopy(void) {
     return has_sendfile();
 }
@@ -500,32 +466,6 @@ void iperf_set_test_unit_format(struct iperf_test *ipt, char unit_format) {
     ipt->settings->unit_format = unit_format;
 }
 
-#if defined(HAVE_SSL)
-void iperf_set_test_client_username(struct iperf_test *ipt, const char *client_username) {
-    ipt->settings->client_username = strdup(client_username);
-}
-
-void iperf_set_test_client_password(struct iperf_test *ipt, const char *client_password) {
-    ipt->settings->client_password = strdup(client_password);
-}
-
-void iperf_set_test_client_rsa_pubkey(struct iperf_test *ipt, const char *client_rsa_pubkey_base64) {
-    ipt->settings->client_rsa_pubkey = load_pubkey_from_base64(client_rsa_pubkey_base64);
-}
-
-void iperf_set_test_server_authorized_users(struct iperf_test *ipt, const char *server_authorized_users) {
-    ipt->server_authorized_users = strdup(server_authorized_users);
-}
-
-void iperf_set_test_server_skew_threshold(struct iperf_test *ipt, int server_skew_threshold) {
-    ipt->server_skew_threshold = server_skew_threshold;
-}
-
-void iperf_set_test_server_rsa_privkey(struct iperf_test *ipt, const char *server_rsa_privkey_base64) {
-    ipt->server_rsa_private_key = load_privkey_from_base64(server_rsa_privkey_base64);
-}
-#endif // HAVE_SSL
-
 void iperf_set_test_bind_address(struct iperf_test *ipt, const char *bnd_address) {
     ipt->bind_address = strdup(bnd_address);
 }
@@ -536,10 +476,6 @@ void iperf_set_test_bind_dev(struct iperf_test *ipt, const char *bnd_dev) {
 
 void iperf_set_test_udp_counters_64bit(struct iperf_test *ipt, int udp_counters_64bit) {
     ipt->udp_counters_64bit = udp_counters_64bit;
-}
-
-void iperf_set_test_one_off(struct iperf_test *ipt, int one_off) {
-    ipt->one_off = one_off;
 }
 
 void iperf_set_test_tos(struct iperf_test *ipt, int tos) {
@@ -625,17 +561,13 @@ void iperf_on_new_stream(struct iperf_stream *sp) {
 }
 
 void iperf_on_test_start(struct iperf_test *test) {
-    if (test->json_output) {
-        cJSON_AddItemToObject(test->json_start, "test_start", iperf_json_printf("protocol: %s  num_streams: %d  blksize: %d  omit: %d  duration: %d  bytes: %d  blocks: %d  reverse: %d  tos: %d  target_bitrate: %d bidir: %d fqrate: %d", test->protocol->name, (int64_t)test->num_streams, (int64_t)test->settings->blksize, (int64_t)test->omit, (int64_t)test->duration, (int64_t)test->settings->bytes, (int64_t)test->settings->blocks, test->reverse ? (int64_t)1 : (int64_t)0, (int64_t)test->settings->tos, (int64_t)test->settings->rate, (int64_t)test->bidirectional, (uint64_t)test->settings->fqrate));
-    } else {
-        if (test->verbose) {
-            if (test->settings->bytes)
-                iperf_printf(test, test_start_bytes, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->settings->bytes, test->settings->tos);
-            else if (test->settings->blocks)
-                iperf_printf(test, test_start_blocks, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->settings->blocks, test->settings->tos);
-            else
-                iperf_printf(test, test_start_time, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->duration, test->settings->tos);
-        }
+    if (test->verbose) {
+        if (test->settings->bytes)
+            iperf_printf(test, test_start_bytes, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->settings->bytes, test->settings->tos);
+        else if (test->settings->blocks)
+            iperf_printf(test, test_start_blocks, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->settings->blocks, test->settings->tos);
+        else
+            iperf_printf(test, test_start_time, test->protocol->name, test->num_streams, test->settings->blksize, test->omit, test->duration, test->settings->tos);
     }
 }
 
@@ -672,19 +604,12 @@ void iperf_on_connect(struct iperf_test *test) {
 
     now_secs = time((time_t *)0);
     (void)strftime(now_str, sizeof(now_str), rfc1123_fmt, gmtime(&now_secs));
-    if (test->json_output)
-        cJSON_AddItemToObject(test->json_start, "timestamp", iperf_json_printf("time: %s  timesecs: %d", now_str, (int64_t)now_secs));
-    else if (test->verbose)
-        iperf_printf(test, report_time, now_str);
+    iperf_printf(test, report_time, now_str);
 
     if (test->role == 'c') {
-        if (test->json_output)
-            cJSON_AddItemToObject(test->json_start, "connecting_to", iperf_json_printf("host: %s  port: %d", test->server_hostname, (int64_t)test->server_port));
-        else {
-            iperf_printf(test, report_connecting, test->server_hostname, test->server_port);
-            if (test->reverse)
-                iperf_printf(test, report_reverse, test->server_hostname);
-        }
+        iperf_printf(test, report_connecting, test->server_hostname, test->server_port);
+        if (test->reverse)
+            iperf_printf(test, report_reverse, test->server_hostname);
     } else {
         len = sizeof(sa);
         getpeername(test->ctrl_sck, (struct sockaddr *)&sa, &len);
@@ -700,24 +625,9 @@ void iperf_on_connect(struct iperf_test *test) {
         if (mapped_v4_to_regular_v4(ipr)) {
             iperf_set_mapped_v4(test, 1);
         }
-        if (test->json_output)
-            cJSON_AddItemToObject(test->json_start, "accepted_connection", iperf_json_printf("host: %s  port: %d", ipr, (int64_t)port));
-        else
-            iperf_printf(test, report_accepted, ipr, port);
+        iperf_printf(test, report_accepted, ipr, port);
     }
-    if (test->json_output) {
-        cJSON_AddStringToObject(test->json_start, "cookie", test->cookie);
-        if (test->protocol->id == SOCK_STREAM) {
-            if (test->settings->mss)
-                cJSON_AddNumberToObject(test->json_start, "tcp_mss", test->settings->mss);
-            else {
-                cJSON_AddNumberToObject(test->json_start, "tcp_mss_default", test->ctrl_sck_mss);
-            }
-        }
-        // Duplicate to make sure it appears on all output
-        cJSON_AddNumberToObject(test->json_start, "target_bitrate", test->settings->rate);
-        cJSON_AddNumberToObject(test->json_start, "fq_rate", test->settings->fqrate);
-    } else if (test->verbose) {
+    if (test->verbose) {
         iperf_printf(test, report_cookie, test->cookie);
         if (test->protocol->id == SOCK_STREAM) {
             if (test->settings->mss)
@@ -786,9 +696,7 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
         {"format", required_argument, NULL, 'f'},
         {"interval", required_argument, NULL, 'i'},
         {"daemon", no_argument, NULL, 'D'},
-        {"one-off", no_argument, NULL, '1'},
         {"verbose", no_argument, NULL, 'V'},
-        {"json", no_argument, NULL, 'J'},
         {"version", no_argument, NULL, 'v'},
         {"server", no_argument, NULL, 's'},
         {"client", required_argument, NULL, 'c'},
@@ -824,20 +732,11 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
         {"file", required_argument, NULL, 'F'},
         {"repeating-payload", no_argument, NULL, OPT_REPEATING_PAYLOAD},
         {"timestamps", optional_argument, NULL, OPT_TIMESTAMPS},
-#if defined(HAVE_CPU_AFFINITY)
-        {"affinity", required_argument, NULL, 'A'},
-#endif /* HAVE_CPU_AFFINITY */
         {"title", required_argument, NULL, 'T'},
 #if defined(HAVE_TCP_CONGESTION)
         {"congestion", required_argument, NULL, 'C'},
         {"linux-congestion", required_argument, NULL, 'C'},
 #endif /* HAVE_TCP_CONGESTION */
-#if defined(HAVE_SCTP_H)
-        {"sctp", no_argument, NULL, OPT_SCTP},
-        {"nstreams", required_argument, NULL, OPT_NUMSTREAMS},
-        {"xbind", required_argument, NULL, 'X'},
-#endif
-        {"pidfile", required_argument, NULL, 'I'},
         {"logfile", required_argument, NULL, OPT_LOGFILE},
         {"forceflush", no_argument, NULL, OPT_FORCEFLUSH},
         {"get-server-output", no_argument, NULL, OPT_GET_SERVER_OUTPUT},
@@ -846,13 +745,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
 #if defined(HAVE_DONT_FRAGMENT)
         {"dont-fragment", no_argument, NULL, OPT_DONT_FRAGMENT},
 #endif /* HAVE_DONT_FRAGMENT */
-#if defined(HAVE_SSL)
-        {"username", required_argument, NULL, OPT_CLIENT_USERNAME},
-        {"rsa-public-key-path", required_argument, NULL, OPT_CLIENT_RSA_PUBLIC_KEY},
-        {"rsa-private-key-path", required_argument, NULL, OPT_SERVER_RSA_PRIVATE_KEY},
-        {"authorized-users-path", required_argument, NULL, OPT_SERVER_AUTHORIZED_USERS},
-        {"time-skew-threshold", required_argument, NULL, OPT_SERVER_SKEW_THRESHOLD},
-#endif /* HAVE_SSL */
         {"fq-rate", required_argument, NULL, OPT_FQ_RATE},
         {"pacing-timer", required_argument, NULL, OPT_PACING_TIMER},
         {"connect-timeout", required_argument, NULL, OPT_CONNECT_TIMEOUT},
@@ -868,22 +760,15 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
     int blksize;
     int server_flag, client_flag, rate_flag, duration_flag, rcv_timeout_flag, snd_timeout_flag;
     char *endptr;
-#if defined(HAVE_CPU_AFFINITY)
-    char *comma;
-#endif /* HAVE_CPU_AFFINITY */
     char *slash;
     char *p, *p1;
-    struct xbind_entry *xbe;
     double farg;
     int rcv_timeout_in = 0;
 
     blksize = 0;
     server_flag = client_flag = rate_flag = duration_flag = rcv_timeout_flag = snd_timeout_flag = 0;
-#if defined(HAVE_SSL)
-    char *client_username = NULL, *client_rsa_public_key = NULL, *server_rsa_private_key = NULL;
-#endif /* HAVE_SSL */
 
-    while ((flag = getopt_long(argc, argv, "p:f:i:D1VJvsc:ub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:A:T:C:dI:hX:", longopts, NULL)) != -1) {
+    while ((flag = getopt_long(argc, argv, "p:f:i:DVvsc:ub:t:n:k:l:P:Rw:B:M:N46S:L:ZO:F:T:C:dh", longopts, NULL)) != -1) {
         switch (flag) {
         case 'p':
             portno = atoi(optarg);
@@ -919,15 +804,8 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             test->daemon = 1;
             server_flag = 1;
             break;
-        case '1':
-            test->one_off = 1;
-            server_flag = 1;
-            break;
         case 'V':
             test->verbose = 1;
-            break;
-        case 'J':
-            test->json_output = 1;
             break;
         case 'v':
             printf("%s (cJSON %s)\n%s\n%s\n", version, cJSON_Version(), get_system_info(),
@@ -965,14 +843,8 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             client_flag = 1;
             break;
         case OPT_SCTP:
-#if defined(HAVE_SCTP_H)
-            set_protocol(test, Psctp);
-            client_flag = 1;
-            break;
-#else  /* HAVE_SCTP_H */
             i_errno = IEUNIMP;
             return -1;
-#endif /* HAVE_SCTP_H */
 
         case OPT_NUMSTREAMS:
 #if defined(linux) || defined(__FreeBSD__)
@@ -1149,20 +1021,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             return -1;
 #endif /* HAVE_FLOWLABEL */
             break;
-        case 'X':
-            xbe = (struct xbind_entry *)malloc(sizeof(struct xbind_entry));
-            if (!xbe) {
-                i_errno = IESETSCTPBINDX;
-                return -1;
-            }
-            memset(xbe, 0, sizeof(*xbe));
-            xbe->name = strdup(optarg);
-            if (!xbe->name) {
-                i_errno = IESETSCTPBINDX;
-                return -1;
-            }
-            TAILQ_INSERT_TAIL(&test->xbind_addrs, xbe, link);
-            break;
         case 'Z':
             if (!has_sendfile()) {
                 i_errno = IENOSENDFILE;
@@ -1222,27 +1080,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             snd_timeout_flag = 1;
             break;
 #endif /* HAVE_TCP_USER_TIMEOUT */
-        case 'A':
-#if defined(HAVE_CPU_AFFINITY)
-            test->affinity = strtol(optarg, &endptr, 0);
-            if (endptr == optarg || test->affinity < 0 || test->affinity > 1024) {
-                i_errno = IEAFFINITY;
-                return -1;
-            }
-            comma = strchr(optarg, ',');
-            if (comma != NULL) {
-                test->server_affinity = atoi(comma + 1);
-                if (test->server_affinity < 0 || test->server_affinity > 1024) {
-                    i_errno = IEAFFINITY;
-                    return -1;
-                }
-                client_flag = 1;
-            }
-#else  /* HAVE_CPU_AFFINITY */
-            i_errno = IEUNIMP;
-            return -1;
-#endif /* HAVE_CPU_AFFINITY */
-            break;
         case 'T':
             test->title = strdup(optarg);
             client_flag = 1;
@@ -1264,9 +1101,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
                 if (test->debug_level < 0)
                     test->debug_level = DEBUG_LEVEL_MAX;
             }
-            break;
-        case 'I':
-            test->pidfile = strdup(optarg);
             break;
         case OPT_LOGFILE:
             test->logfile = strdup(optarg);
@@ -1306,27 +1140,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             client_flag = 1;
             break;
 #endif /* HAVE_DONT_FRAGMENT */
-#if defined(HAVE_SSL)
-        case OPT_CLIENT_USERNAME:
-            client_username = strdup(optarg);
-            break;
-        case OPT_CLIENT_RSA_PUBLIC_KEY:
-            client_rsa_public_key = strdup(optarg);
-            break;
-        case OPT_SERVER_RSA_PRIVATE_KEY:
-            server_rsa_private_key = strdup(optarg);
-            break;
-        case OPT_SERVER_AUTHORIZED_USERS:
-            test->server_authorized_users = strdup(optarg);
-            break;
-        case OPT_SERVER_SKEW_THRESHOLD:
-            test->server_skew_threshold = atoi(optarg);
-            if (test->server_skew_threshold <= 0) {
-                i_errno = IESKEWTHRESHOLD;
-                return -1;
-            }
-            break;
-#endif /* HAVE_SSL */
         case OPT_PACING_TIMER:
             test->settings->pacing_timer = unit_atoi(optarg);
             client_flag = 1;
@@ -1354,66 +1167,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
         return -1;
     }
 
-#if defined(HAVE_SSL)
-
-    if (test->role == 's' && (client_username || client_rsa_public_key)) {
-        i_errno = IECLIENTONLY;
-        return -1;
-    } else if (test->role == 'c' && (client_username || client_rsa_public_key) && !(client_username && client_rsa_public_key)) {
-        i_errno = IESETCLIENTAUTH;
-        return -1;
-    } else if (test->role == 'c' && (client_username && client_rsa_public_key)) {
-        char *client_password = NULL;
-        size_t s;
-        /* Need to copy env var, so we can do a common free */
-        if ((client_password = getenv("IPERF3_PASSWORD")) != NULL)
-            client_password = strdup(client_password);
-        else if (iperf_getpass(&client_password, &s, stdin) < 0) {
-            i_errno = IESETCLIENTAUTH;
-            return -1;
-        }
-        if (test_load_pubkey_from_file(client_rsa_public_key) < 0) {
-            iperf_err(test, "%s\n", ERR_error_string(ERR_get_error(), NULL));
-            i_errno = IESETCLIENTAUTH;
-            return -1;
-        }
-
-        test->settings->client_username = client_username;
-        test->settings->client_password = client_password;
-        test->settings->client_rsa_pubkey = load_pubkey_from_file(client_rsa_public_key);
-        free(client_rsa_public_key);
-        client_rsa_public_key = NULL;
-    }
-
-    if (test->role == 'c' && (server_rsa_private_key || test->server_authorized_users)) {
-        i_errno = IESERVERONLY;
-        return -1;
-    } else if (test->role == 'c' && (test->server_skew_threshold != 0)) {
-        i_errno = IESERVERONLY;
-        return -1;
-    } else if (test->role == 'c' && rcv_timeout_flag && test->mode == SENDER) {
-        i_errno = IERVRSONLYRCVTIMEOUT;
-        return -1;
-    } else if (test->role == 's' && (server_rsa_private_key || test->server_authorized_users) && !(server_rsa_private_key && test->server_authorized_users)) {
-        i_errno = IESETSERVERAUTH;
-        return -1;
-    } else if (test->role == 's' && server_rsa_private_key) {
-        test->server_rsa_private_key = load_privkey_from_file(server_rsa_private_key);
-        if (test->server_rsa_private_key == NULL) {
-            iperf_err(test, "%s\n", ERR_error_string(ERR_get_error(), NULL));
-            i_errno = IESETSERVERAUTH;
-            return -1;
-        }
-        free(server_rsa_private_key);
-        server_rsa_private_key = NULL;
-
-        if (test->server_skew_threshold == 0) {
-            // Set default value for time skew threshold
-            test->server_skew_threshold = 10;
-        }
-    }
-
-#endif // HAVE_SSL
     if (blksize == 0) {
         if (test->protocol->id == Pudp)
             blksize = 0; /* try to dynamically determine from MSS */
@@ -1480,19 +1233,6 @@ int iperf_parse_arguments(struct iperf_test *test, int argc, char **argv) {
             (test->settings->bitrate_limit_interval <= test->stats_interval ?
                  1 :
                  round(test->settings->bitrate_limit_interval / test->stats_interval));
-    }
-
-    /* Show warning if JSON output is used with explicit report format */
-    if ((test->json_output) && (test->settings->unit_format != 'a')) {
-        warning("Report format (-f) flag ignored with JSON output (-J)");
-    }
-
-    /* Show warning if JSON output is used with verbose or debug flags */
-    if (test->json_output && test->verbose) {
-        warning("Verbose output (-v) may interfere with JSON output (-J)");
-    }
-    if (test->json_output && test->debug) {
-        warning("Debug output (-d) may interfere with JSON output (-J)");
     }
 
     return 0;
@@ -1720,40 +1460,6 @@ int iperf_create_send_timers(struct iperf_test *test) {
     return 0;
 }
 
-#if defined(HAVE_SSL)
-int test_is_authorized(struct iperf_test *test) {
-    if (!(test->server_rsa_private_key && test->server_authorized_users)) {
-        return 0;
-    }
-
-    if (test->settings->authtoken) {
-        char *username = NULL, *password = NULL;
-        time_t ts;
-        int rc = decode_auth_setting(test->debug, test->settings->authtoken, test->server_rsa_private_key, &username, &password, &ts);
-        if (rc) {
-            return -1;
-        }
-        int ret = check_authentication(username, password, ts, test->server_authorized_users, test->server_skew_threshold);
-        if (ret == 0) {
-            if (test->debug) {
-                iperf_printf(test, report_authentication_succeeded, username, ts);
-            }
-            free(username);
-            free(password);
-            return 0;
-        } else {
-            if (test->debug) {
-                iperf_printf(test, report_authentication_failed, ret, username, ts);
-            }
-            free(username);
-            free(password);
-            return -1;
-        }
-    }
-    return -1;
-}
-#endif // HAVE_SSL
-
 /**
  * iperf_exchange_parameters - handles the param_Exchange part for client
  *
@@ -1770,20 +1476,6 @@ int iperf_exchange_parameters(struct iperf_test *test) {
     } else {
         if (get_parameters(test) < 0)
             return -1;
-
-#if defined(HAVE_SSL)
-        if (test_is_authorized(test) < 0) {
-            if (iperf_set_send_state(test, SERVER_ERROR) != 0)
-                return -1;
-            i_errno = IEAUTHTEST;
-            err = htonl(i_errno);
-            if (Nwrite(test->ctrl_sck, (char *)&err, sizeof(err), Ptcp) < 0) {
-                i_errno = IECTRLWRITE;
-                return -1;
-            }
-            return -1;
-        }
-#endif // HAVE_SSL
 
         if ((s = test->protocol->listen(test)) < 0) {
             if (iperf_set_send_state(test, SERVER_ERROR) != 0)
@@ -1852,8 +1544,6 @@ static int send_parameters(struct iperf_test *test) {
         else if (test->protocol->id == Psctp)
             cJSON_AddTrueToObject(j, "sctp");
         cJSON_AddNumberToObject(j, "omit", test->omit);
-        if (test->server_affinity != -1)
-            cJSON_AddNumberToObject(j, "server_affinity", test->server_affinity);
         cJSON_AddNumberToObject(j, "time", test->duration);
         cJSON_AddNumberToObject(j, "num", test->settings->bytes);
         cJSON_AddNumberToObject(j, "blockcount", test->settings->blocks);
@@ -1902,20 +1592,6 @@ static int send_parameters(struct iperf_test *test) {
         if (test->settings->dont_fragment)
             cJSON_AddNumberToObject(j, "dont_fragment", test->settings->dont_fragment);
 #endif /* HAVE_DONT_FRAGMENT */
-#if defined(HAVE_SSL)
-        /* Send authentication parameters */
-        if (test->settings->client_username && test->settings->client_password && test->settings->client_rsa_pubkey) {
-            int rc = encode_auth_setting(test->settings->client_username, test->settings->client_password, test->settings->client_rsa_pubkey, &test->settings->authtoken);
-
-            if (rc) {
-                cJSON_Delete(j);
-                i_errno = IESENDPARAMS;
-                return -1;
-            }
-
-            cJSON_AddStringToObject(j, "authtoken", test->settings->authtoken);
-        }
-#endif // HAVE_SSL
         cJSON_AddStringToObject(j, "client_version", IPERF_VERSION);
 
         if (test->debug) {
@@ -1960,8 +1636,6 @@ static int get_parameters(struct iperf_test *test) {
             set_protocol(test, Psctp);
         if ((j_p = cJSON_GetObjectItem(j, "omit")) != NULL)
             test->omit = j_p->valueint;
-        if ((j_p = cJSON_GetObjectItem(j, "server_affinity")) != NULL)
-            test->server_affinity = j_p->valueint;
         if ((j_p = cJSON_GetObjectItem(j, "time")) != NULL)
             test->duration = j_p->valueint;
         test->settings->bytes = 0;
@@ -2016,10 +1690,6 @@ static int get_parameters(struct iperf_test *test) {
         if ((j_p = cJSON_GetObjectItem(j, "dont_fragment")) != NULL)
             test->settings->dont_fragment = j_p->valueint;
 #endif /* HAVE_DONT_FRAGMENT */
-#if defined(HAVE_SSL)
-        if ((j_p = cJSON_GetObjectItem(j, "authtoken")) != NULL)
-            test->settings->authtoken = strdup(j_p->valuestring);
-#endif // HAVE_SSL
         if (test->mode && test->protocol->id == Ptcp && has_tcpinfo_retransmits())
             test->sender_has_retransmits = 1;
         if (test->settings->rate)
@@ -2062,29 +1732,24 @@ static int send_results(struct iperf_test *test) {
 
         /* If on the server and sending server output, then do this */
         if (test->role == 's' && test->get_server_output) {
-            if (test->json_output) {
-                /* Add JSON output */
-                cJSON_AddItemReferenceToObject(j, "server_output_json", test->json_top);
-            } else {
-                /* Add textual output */
-                size_t buflen = 0;
+            /* Add textual output */
+            size_t buflen = 0;
 
-                /* Figure out how much room we need to hold the complete output string */
-                struct iperf_textline *t;
-                TAILQ_FOREACH(t, &(test->server_output_list), textlineentries) {
-                    buflen += strlen(t->line);
-                }
-
-                /* Allocate and build it up from the component lines */
-                char *output = calloc(buflen + 1, 1);
-                TAILQ_FOREACH(t, &(test->server_output_list), textlineentries) {
-                    strncat(output, t->line, buflen);
-                    buflen -= strlen(t->line);
-                }
-
-                cJSON_AddStringToObject(j, "server_output_text", output);
-                free(output);
+            /* Figure out how much room we need to hold the complete output string */
+            struct iperf_textline *t;
+            TAILQ_FOREACH(t, &(test->server_output_list), textlineentries) {
+                buflen += strlen(t->line);
             }
+
+            /* Allocate and build it up from the component lines */
+            char *output = calloc(buflen + 1, 1);
+            TAILQ_FOREACH(t, &(test->server_output_list), textlineentries) {
+                strncat(output, t->line, buflen);
+                buflen -= strlen(t->line);
+            }
+
+            cJSON_AddStringToObject(j, "server_output_text", output);
+            free(output);
         }
 
         j_streams = cJSON_CreateArray();
@@ -2391,10 +2056,7 @@ void connect_msg(struct iperf_stream *sp) {
         rport = ntohs(((struct sockaddr_in6 *)&sp->remote_addr)->sin6_port);
     }
 
-    if (sp->test->json_output)
-        cJSON_AddItemToArray(sp->test->json_connected, iperf_json_printf("socket: %d  local_host: %s  local_port: %d  remote_host: %s  remote_port: %d", (int64_t)sp->socket, ipl, (int64_t)lport, ipr, (int64_t)rport));
-    else
-        iperf_printf(sp->test, report_connected, sp->socket, ipl, lport, ipr, rport);
+    iperf_printf(sp->test, report_connected, sp->socket, ipl, lport, ipr, rport);
 }
 
 /**************************************************************************/
@@ -2454,19 +2116,10 @@ void protocol_free(struct protocol *proto) {
 /**************************************************************************/
 int iperf_defaults(struct iperf_test *testp) {
     struct protocol *tcp, *udp;
-#if defined(HAVE_SCTP_H)
-    struct protocol *sctp;
-#endif /* HAVE_SCTP_H */
 
     testp->omit = OMIT;
     testp->duration = DURATION;
     testp->diskfile_name = (char *)0;
-    testp->affinity = -1;
-    testp->server_affinity = -1;
-    TAILQ_INIT(&testp->xbind_addrs);
-#if defined(HAVE_CPUSET_SETAFFINITY)
-    CPU_ZERO(&testp->cpumask);
-#endif /* HAVE_CPUSET_SETAFFINITY */
     testp->title = NULL;
     testp->extra_data = NULL;
     testp->congestion = NULL;
@@ -2543,26 +2196,6 @@ int iperf_defaults(struct iperf_test *testp) {
 
     set_protocol(testp, Ptcp);
 
-#if defined(HAVE_SCTP_H)
-    sctp = protocol_new();
-    if (!sctp) {
-        protocol_free(tcp);
-        protocol_free(udp);
-        return -1;
-    }
-
-    sctp->id = Psctp;
-    sctp->name = "SCTP";
-    sctp->accept = iperf_sctp_accept;
-    sctp->listen = iperf_sctp_listen;
-    sctp->connect = iperf_sctp_connect;
-    sctp->send = iperf_sctp_send;
-    sctp->recv = iperf_sctp_recv;
-    sctp->init = iperf_sctp_init;
-
-    SLIST_INSERT_AFTER(udp, sctp, protocols);
-#endif /* HAVE_SCTP_H */
-
     testp->on_new_stream = iperf_on_new_stream;
     testp->on_test_start = iperf_on_test_start;
     testp->on_connect = iperf_on_connect;
@@ -2592,37 +2225,6 @@ void iperf_free_test(struct iperf_test *test) {
         free(test->bind_address);
     if (test->bind_dev)
         free(test->bind_dev);
-    if (!TAILQ_EMPTY(&test->xbind_addrs)) {
-        struct xbind_entry *xbe;
-
-        while (!TAILQ_EMPTY(&test->xbind_addrs)) {
-            xbe = TAILQ_FIRST(&test->xbind_addrs);
-            TAILQ_REMOVE(&test->xbind_addrs, xbe, link);
-            if (xbe->ai)
-                freeaddrinfo(xbe->ai);
-            free(xbe->name);
-            free(xbe);
-        }
-    }
-#if defined(HAVE_SSL)
-
-    if (test->server_rsa_private_key)
-        EVP_PKEY_free(test->server_rsa_private_key);
-    test->server_rsa_private_key = NULL;
-
-    free(test->settings->authtoken);
-    test->settings->authtoken = NULL;
-
-    free(test->settings->client_username);
-    test->settings->client_username = NULL;
-
-    free(test->settings->client_password);
-    test->settings->client_password = NULL;
-
-    if (test->settings->client_rsa_pubkey)
-        EVP_PKEY_free(test->settings->client_rsa_pubkey);
-    test->settings->client_rsa_pubkey = NULL;
-#endif /* HAVE_SSL */
 
     if (test->settings)
         free(test->settings);
@@ -2665,11 +2267,6 @@ void iperf_free_test(struct iperf_test *test) {
         test->server_output_text = NULL;
     }
 
-    if (test->json_output_string) {
-        free(test->json_output_string);
-        test->json_output_string = NULL;
-    }
-
     /* Free output line buffers, if any (on the server only) */
     struct iperf_textline *t;
     while (!TAILQ_EMPTY(&test->server_output_list)) {
@@ -2677,18 +2274,6 @@ void iperf_free_test(struct iperf_test *test) {
         TAILQ_REMOVE(&test->server_output_list, t, textlineentries);
         free(t->line);
         free(t);
-    }
-
-    /* sctp_bindx: do not free the arguments, only the resolver results */
-    if (!TAILQ_EMPTY(&test->xbind_addrs)) {
-        struct xbind_entry *xbe;
-
-        TAILQ_FOREACH(xbe, &test->xbind_addrs, link) {
-            if (xbe->ai) {
-                freeaddrinfo(xbe->ai);
-                xbe->ai = NULL;
-            }
-        }
     }
 
     /* Free interval's traffic array for average rate calculations */
@@ -2743,10 +2328,6 @@ void iperf_reset_test(struct iperf_test *test) {
     set_protocol(test, Ptcp);
     test->omit = OMIT;
     test->duration = DURATION;
-    test->server_affinity = -1;
-#if defined(HAVE_CPUSET_SETAFFINITY)
-    CPU_ZERO(&test->cpumask);
-#endif /* HAVE_CPUSET_SETAFFINITY */
     test->state = 0;
 
     test->ctrl_sck = -1;
@@ -2784,25 +2365,6 @@ void iperf_reset_test(struct iperf_test *test) {
     test->settings->tos = 0;
     test->settings->dont_fragment = 0;
     test->zerocopy = 0;
-
-#if defined(HAVE_SSL)
-    if (test->settings->authtoken) {
-        free(test->settings->authtoken);
-        test->settings->authtoken = NULL;
-    }
-    if (test->settings->client_username) {
-        free(test->settings->client_username);
-        test->settings->client_username = NULL;
-    }
-    if (test->settings->client_password) {
-        free(test->settings->client_password);
-        test->settings->client_password = NULL;
-    }
-    if (test->settings->client_rsa_pubkey) {
-        EVP_PKEY_free(test->settings->client_rsa_pubkey);
-        test->settings->client_rsa_pubkey = NULL;
-    }
-#endif /* HAVE_SSL */
 
     memset(test->cookie, 0, COOKIE_SIZE);
     test->multisend = 10; /* arbitrary */
@@ -2956,8 +2518,6 @@ static void iperf_print_intermediate(struct iperf_test *test) {
     struct iperf_stream *sp = NULL;
     struct iperf_interval_results *irp;
     struct iperf_time temp_time;
-    cJSON *json_interval;
-    cJSON *json_interval_streams;
 
     int lower_mode, upper_mode;
     int current_mode;
@@ -3005,20 +2565,6 @@ static void iperf_print_intermediate(struct iperf_test *test) {
         return;
     }
 
-    if (test->json_output) {
-        json_interval = cJSON_CreateObject();
-        if (json_interval == NULL)
-            return;
-        cJSON_AddItemToArray(test->json_intervals, json_interval);
-        json_interval_streams = cJSON_CreateArray();
-        if (json_interval_streams == NULL)
-            return;
-        cJSON_AddItemToObject(json_interval, "streams", json_interval_streams);
-    } else {
-        json_interval = NULL;
-        json_interval_streams = NULL;
-    }
-
     /*
      * We must to sum streams separately.
      * For bidirectional mode we must to display
@@ -3056,10 +2602,7 @@ static void iperf_print_intermediate(struct iperf_test *test) {
         double avg_jitter = 0.0, lost_percent;
         int stream_must_be_sender = current_mode * current_mode;
 
-        char *sum_name;
-
         /*  Print stream role just for bidirectional mode. */
-
         if (test->mode == BIDIRECTIONAL) {
             sprintf(mbuf, "[%s-%s]", stream_must_be_sender ? "TX" : "RX", test->role == 'c' ? "C" : "S");
         } else {
@@ -3069,7 +2612,7 @@ static void iperf_print_intermediate(struct iperf_test *test) {
 
         SLIST_FOREACH(sp, &test->streams, streams) {
             if (sp->sender == stream_must_be_sender) {
-                print_interval_results(test, sp, json_interval_streams);
+                print_interval_results(test, sp);
                 /* sum up all streams */
                 irp = TAILQ_LAST(&sp->result->interval_results, irlisthead);
                 if (irp == NULL) {
@@ -3091,21 +2634,7 @@ static void iperf_print_intermediate(struct iperf_test *test) {
         }
 
         /* next build string with sum of all streams */
-        if (test->num_streams > 1 || test->json_output) {
-            /*
-             * With BIDIR give a different JSON object name to the one sent/receive sums.
-             * The different name is given to the data sent from the server, which is
-             * the "reverse" channel.  This makes sure that the name reported on the server
-             * and client are compatible, and the names are the same as with non-bidir,
-             * except for when reverse is used.
-             */
-            sum_name = "sum";
-            if (test->mode == BIDIRECTIONAL) {
-                if ((test->role == 'c' && !stream_must_be_sender) || (test->role != 'c' && stream_must_be_sender)) {
-                    sum_name = "sum_bidir_reverse";
-                }
-            }
-
+        if (test->num_streams > 1) {
             sp = SLIST_FIRST(&test->streams); /* reset back to 1st stream */
             /* Only do this of course if there was a first stream */
             if (sp) {
@@ -3122,24 +2651,15 @@ static void iperf_print_intermediate(struct iperf_test *test) {
                 if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
                     if (test->sender_has_retransmits == 1 && stream_must_be_sender) {
                         /* Interval sum, TCP with retransmits. */
-                        if (test->json_output)
-                            cJSON_AddItemToObject(json_interval, sum_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  retransmits: %d  omitted: %b sender: %b", (double)start_time, (double)end_time, (double)irp->interval_duration, (int64_t)bytes, bandwidth * 8, (int64_t)retransmits, irp->omitted, stream_must_be_sender)); /* XXX irp->omitted or test->omitting? */
-                        else
-                            iperf_printf(test, report_sum_bw_retrans_format, mbuf, start_time, end_time, ubuf, nbuf, retransmits, irp->omitted ? report_omitted : ""); /* XXX irp->omitted or test->omitting? */
+                        iperf_printf(test, report_sum_bw_retrans_format, mbuf, start_time, end_time, ubuf, nbuf, retransmits, irp->omitted ? report_omitted : ""); /* XXX irp->omitted or test->omitting? */
                     } else {
                         /* Interval sum, TCP without retransmits. */
-                        if (test->json_output)
-                            cJSON_AddItemToObject(json_interval, sum_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  omitted: %b sender: %b", (double)start_time, (double)end_time, (double)irp->interval_duration, (int64_t)bytes, bandwidth * 8, test->omitting, stream_must_be_sender));
-                        else
-                            iperf_printf(test, report_sum_bw_format, mbuf, start_time, end_time, ubuf, nbuf, test->omitting ? report_omitted : "");
+                        iperf_printf(test, report_sum_bw_format, mbuf, start_time, end_time, ubuf, nbuf, test->omitting ? report_omitted : "");
                     }
                 } else {
                     /* Interval sum, UDP. */
                     if (stream_must_be_sender) {
-                        if (test->json_output)
-                            cJSON_AddItemToObject(json_interval, sum_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  packets: %d  omitted: %b sender: %b", (double)start_time, (double)end_time, (double)irp->interval_duration, (int64_t)bytes, bandwidth * 8, (int64_t)total_packets, test->omitting, stream_must_be_sender));
-                        else
-                            iperf_printf(test, report_sum_bw_udp_sender_format, mbuf, start_time, end_time, ubuf, nbuf, zbuf, total_packets, test->omitting ? report_omitted : "");
+                        iperf_printf(test, report_sum_bw_udp_sender_format, mbuf, start_time, end_time, ubuf, nbuf, zbuf, total_packets, test->omitting ? report_omitted : "");
                     } else {
                         avg_jitter /= test->num_streams;
                         if (total_packets > 0) {
@@ -3147,10 +2667,7 @@ static void iperf_print_intermediate(struct iperf_test *test) {
                         } else {
                             lost_percent = 0.0;
                         }
-                        if (test->json_output)
-                            cJSON_AddItemToObject(json_interval, sum_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f  omitted: %b sender: %b", (double)start_time, (double)end_time, (double)irp->interval_duration, (int64_t)bytes, bandwidth * 8, (double)avg_jitter * 1000.0, (int64_t)lost_packets, (int64_t)total_packets, (double)lost_percent, test->omitting, stream_must_be_sender));
-                        else
-                            iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, end_time, ubuf, nbuf, avg_jitter * 1000.0, lost_packets, total_packets, lost_percent, test->omitting ? report_omitted : "");
+                        iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, end_time, ubuf, nbuf, avg_jitter * 1000.0, lost_packets, total_packets, lost_percent, test->omitting ? report_omitted : "");
                     }
                 }
             }
@@ -3162,44 +2679,32 @@ static void iperf_print_intermediate(struct iperf_test *test) {
  * Print overall summary statistics at the end of a test.
  */
 static void iperf_print_results(struct iperf_test *test) {
-    cJSON *json_summary_streams = NULL;
-
     int lower_mode, upper_mode;
     int current_mode;
-
-    char *sum_sent_name, *sum_received_name, *sum_name;
 
     int tmp_sender_has_retransmits = test->sender_has_retransmits;
 
     /* print final summary for all intervals */
-
-    if (test->json_output) {
-        json_summary_streams = cJSON_CreateArray();
-        if (json_summary_streams == NULL)
-            return;
-        cJSON_AddItemToObject(test->json_end, "streams", json_summary_streams);
-    } else {
-        iperf_printf(test, "%s", report_bw_separator);
-        if (test->verbose)
-            iperf_printf(test, "%s", report_summary);
-        if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
-            if (test->sender_has_retransmits || test->other_side_has_retransmits) {
-                if (test->bidirectional)
-                    iperf_printf(test, "%s", report_bw_retrans_header_bidir);
-                else
-                    iperf_printf(test, "%s", report_bw_retrans_header);
-            } else {
-                if (test->bidirectional)
-                    iperf_printf(test, "%s", report_bw_header_bidir);
-                else
-                    iperf_printf(test, "%s", report_bw_header);
-            }
+    iperf_printf(test, "%s", report_bw_separator);
+    if (test->verbose)
+        iperf_printf(test, "%s", report_summary);
+    if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
+        if (test->sender_has_retransmits || test->other_side_has_retransmits) {
+            if (test->bidirectional)
+                iperf_printf(test, "%s", report_bw_retrans_header_bidir);
+            else
+                iperf_printf(test, "%s", report_bw_retrans_header);
         } else {
             if (test->bidirectional)
-                iperf_printf(test, "%s", report_bw_udp_header_bidir);
+                iperf_printf(test, "%s", report_bw_header_bidir);
             else
-                iperf_printf(test, "%s", report_bw_udp_header);
+                iperf_printf(test, "%s", report_bw_header);
         }
+    } else {
+        if (test->bidirectional)
+            iperf_printf(test, "%s", report_bw_udp_header_bidir);
+        else
+            iperf_printf(test, "%s", report_bw_udp_header);
     }
 
     /*
@@ -3225,7 +2730,6 @@ static void iperf_print_results(struct iperf_test *test) {
     }
 
     for (current_mode = lower_mode; current_mode <= upper_mode; ++current_mode) {
-        cJSON *json_summary_stream = NULL;
         int total_retransmits = 0;
         int total_packets = 0, lost_packets = 0;
         int sender_packet_count = 0, receiver_packet_count = 0;   /* for this stream, this interval */
@@ -3293,13 +2797,6 @@ static void iperf_print_results(struct iperf_test *test) {
             receiver_time = sp->result->receiver_time;
             SLIST_FOREACH(sp, &test->streams, streams) {
                 if (sp->sender == stream_must_be_sender) {
-                    if (test->json_output) {
-                        json_summary_stream = cJSON_CreateObject();
-                        if (json_summary_stream == NULL)
-                            return;
-                        cJSON_AddItemToArray(json_summary_streams, json_summary_stream);
-                    }
-
                     bytes_sent = sp->result->bytes_sent - sp->result->bytes_sent_omit;
                     bytes_received = sp->result->bytes_received;
                     total_sent += bytes_sent;
@@ -3340,9 +2837,7 @@ static void iperf_print_results(struct iperf_test *test) {
                     if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
                         if (test->sender_has_retransmits) {
                             /* Sender summary, TCP and SCTP with retransmits. */
-                            if (test->json_output)
-                                cJSON_AddItemToObject(json_summary_stream, "sender", iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  retransmits: %d  max_snd_cwnd:  %d  max_snd_wnd:  %d  max_rtt:  %d  min_rtt:  %d  mean_rtt:  %d sender: %b", (int64_t)sp->socket, (double)start_time, (double)sender_time, (double)sender_time, (int64_t)bytes_sent, bandwidth * 8, (int64_t)sp->result->stream_retrans, (int64_t)sp->result->stream_max_snd_cwnd, (int64_t)sp->result->stream_max_snd_wnd, (int64_t)sp->result->stream_max_rtt, (int64_t)sp->result->stream_min_rtt, (int64_t)((sp->result->stream_count_rtt == 0) ? 0 : sp->result->stream_sum_rtt / sp->result->stream_count_rtt), stream_must_be_sender));
-                            else if (test->role == 's' && !sp->sender) {
+                            if (test->role == 's' && !sp->sender) {
                                 if (test->verbose)
                                     iperf_printf(test, report_sender_not_available_format, sp->socket);
                             } else {
@@ -3350,9 +2845,7 @@ static void iperf_print_results(struct iperf_test *test) {
                             }
                         } else {
                             /* Sender summary, TCP and SCTP without retransmits. */
-                            if (test->json_output)
-                                cJSON_AddItemToObject(json_summary_stream, "sender", iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f sender: %b", (int64_t)sp->socket, (double)start_time, (double)sender_time, (double)sender_time, (int64_t)bytes_sent, bandwidth * 8, stream_must_be_sender));
-                            else if (test->role == 's' && !sp->sender) {
+                            if (test->role == 's' && !sp->sender) {
                                 if (test->verbose)
                                     iperf_printf(test, report_sender_not_available_format, sp->socket);
                             } else {
@@ -3366,42 +2859,21 @@ static void iperf_print_results(struct iperf_test *test) {
                         } else {
                             lost_percent = 0.0;
                         }
-                        if (test->json_output) {
-                            /*
-                             * For hysterical raisins, we only emit one JSON
-                             * object for the UDP summary, and it contains
-                             * information for both the sender and receiver
-                             * side.
-                             *
-                             * The JSON format as currently defined only includes one
-                             * value for the number of packets.  We usually want that
-                             * to be the sender's value (how many packets were sent
-                             * by the sender).  However this value might not be
-                             * available on the receiver in certain circumstances
-                             * specifically on the server side for a normal test or
-                             * the client side for a reverse-mode test.  If this
-                             * is the case, then use the receiver's count of packets
-                             * instead.
-                             */
-                            int packet_count = sender_packet_count ? sender_packet_count : receiver_packet_count;
-                            cJSON_AddItemToObject(json_summary_stream, "udp", iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f  out_of_order: %d sender: %b", (int64_t)sp->socket, (double)start_time, (double)sender_time, (double)sender_time, (int64_t)bytes_sent, bandwidth * 8, (double)sp->jitter * 1000.0, (int64_t)(sp->cnt_error - sp->omitted_cnt_error), (int64_t)(packet_count - sp->omitted_packet_count), (double)lost_percent, (int64_t)(sp->outoforder_packets - sp->omitted_outoforder_packets), stream_must_be_sender));
+                        /*
+                            * Due to ordering of messages on the control channel,
+                            * the server cannot report on client-side summary
+                            * statistics.  If we're the server, omit one set of
+                            * summary statistics to avoid giving meaningless
+                            * results.
+                            */
+                        if (test->role == 's' && !sp->sender) {
+                            if (test->verbose)
+                                iperf_printf(test, report_sender_not_available_format, sp->socket);
                         } else {
-                            /*
-                             * Due to ordering of messages on the control channel,
-                             * the server cannot report on client-side summary
-                             * statistics.  If we're the server, omit one set of
-                             * summary statistics to avoid giving meaningless
-                             * results.
-                             */
-                            if (test->role == 's' && !sp->sender) {
-                                if (test->verbose)
-                                    iperf_printf(test, report_sender_not_available_format, sp->socket);
-                            } else {
-                                iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, start_time, sender_time, ubuf, nbuf, 0.0, 0, (sender_packet_count - sp->omitted_packet_count), (double)0, report_sender);
-                            }
-                            if ((sp->outoforder_packets - sp->omitted_outoforder_packets) > 0)
-                                iperf_printf(test, report_sum_outoforder, mbuf, start_time, sender_time, (sp->outoforder_packets - sp->omitted_outoforder_packets));
+                            iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, start_time, sender_time, ubuf, nbuf, 0.0, 0, (sender_packet_count - sp->omitted_packet_count), (double)0, report_sender);
                         }
+                        if ((sp->outoforder_packets - sp->omitted_outoforder_packets) > 0)
+                            iperf_printf(test, report_sum_outoforder, mbuf, start_time, sender_time, (sp->outoforder_packets - sp->omitted_outoforder_packets));
                     }
 
                     if (sp->diskfile_fd >= 0) {
@@ -3413,9 +2885,7 @@ static void iperf_print_results(struct iperf_test *test) {
                                 percent_received = (int)(((double)bytes_received / (double)sb.st_size) * 100.0);
                             }
                             unit_snprintf(sbuf, UNIT_LEN, (double)sb.st_size, 'A');
-                            if (test->json_output)
-                                cJSON_AddItemToObject(json_summary_stream, "diskfile", iperf_json_printf("sent: %d  received: %d  size: %d  percent_sent: %d  percent_received: %d  filename: %s", (int64_t)bytes_sent, (int64_t)bytes_received, (int64_t)sb.st_size, (int64_t)percent_sent, (int64_t)percent_received, test->diskfile_name));
-                            else if (stream_must_be_sender) {
+                            if (stream_must_be_sender) {
                                 iperf_printf(test, report_diskfile, ubuf, sbuf, percent_sent, test->diskfile_name);
                             } else {
                                 unit_snprintf(ubuf, UNIT_LEN, (double)bytes_received, 'A');
@@ -3433,58 +2903,31 @@ static void iperf_print_results(struct iperf_test *test) {
                     unit_snprintf(nbuf, UNIT_LEN, bandwidth, test->settings->unit_format);
                     if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
                         /* Receiver summary, TCP and SCTP */
-                        if (test->json_output)
-                            cJSON_AddItemToObject(json_summary_stream, "receiver", iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f sender: %b", (int64_t)sp->socket, (double)start_time, (double)receiver_time, (double)end_time, (int64_t)bytes_received, bandwidth * 8, stream_must_be_sender));
-                        else if (test->role == 's' && sp->sender) {
+                        if (test->role == 's' && sp->sender) {
                             if (test->verbose)
                                 iperf_printf(test, report_receiver_not_available_format, sp->socket);
                         } else {
                             iperf_printf(test, report_bw_format, sp->socket, mbuf, start_time, receiver_time, ubuf, nbuf, report_receiver);
                         }
                     } else {
-                        /*
-                         * Receiver summary, UDP.  Note that JSON was emitted with
-                         * the sender summary, so we only deal with human-readable
-                         * data here.
-                         */
-                        if (!test->json_output) {
-                            if (receiver_packet_count - sp->omitted_packet_count > 0) {
-                                lost_percent = 100.0 * (sp->cnt_error - sp->omitted_cnt_error) / (receiver_packet_count - sp->omitted_packet_count);
-                            } else {
-                                lost_percent = 0.0;
-                            }
+                        if (receiver_packet_count - sp->omitted_packet_count > 0) {
+                            lost_percent = 100.0 * (sp->cnt_error - sp->omitted_cnt_error) / (receiver_packet_count - sp->omitted_packet_count);
+                        } else {
+                            lost_percent = 0.0;
+                        }
 
-                            if (test->role == 's' && sp->sender) {
-                                if (test->verbose)
-                                    iperf_printf(test, report_receiver_not_available_format, sp->socket);
-                            } else {
-                                iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, start_time, receiver_time, ubuf, nbuf, sp->jitter * 1000.0, (sp->cnt_error - sp->omitted_cnt_error), (receiver_packet_count - sp->omitted_packet_count), lost_percent, report_receiver);
-                            }
+                        if (test->role == 's' && sp->sender) {
+                            if (test->verbose)
+                                iperf_printf(test, report_receiver_not_available_format, sp->socket);
+                        } else {
+                            iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, start_time, receiver_time, ubuf, nbuf, sp->jitter * 1000.0, (sp->cnt_error - sp->omitted_cnt_error), (receiver_packet_count - sp->omitted_packet_count), lost_percent, report_receiver);
                         }
                     }
                 }
             }
         }
 
-        if (test->num_streams > 1 || test->json_output) {
-            /*
-             * With BIDIR give a different JSON object name to the one sent/receive sums.
-             * The different name is given to the data sent from the server, which is
-             * the "reverse" channel.  This makes sure that the name reported on the server
-             * and client are compatible, and the names are the same as with non-bidir,
-             * except for when reverse is used.
-             */
-            sum_name = "sum";
-            sum_sent_name = "sum_sent";
-            sum_received_name = "sum_received";
-            if (test->mode == BIDIRECTIONAL) {
-                if ((test->role == 'c' && !stream_must_be_sender) || (test->role != 'c' && stream_must_be_sender)) {
-                    sum_name = "sum_bidir_reverse";
-                    sum_sent_name = "sum_sent_bidir_reverse";
-                    sum_received_name = "sum_received_bidir_reverse";
-                }
-            }
-
+        if (test->num_streams > 1) {
             unit_snprintf(ubuf, UNIT_LEN, (double)total_sent, 'A');
             /* If no tests were run, arbitrarily set bandwidth to 0. */
             if (sender_time > 0.0) {
@@ -3496,9 +2939,7 @@ static void iperf_print_results(struct iperf_test *test) {
             if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
                 if (test->sender_has_retransmits) {
                     /* Summary sum, TCP with retransmits. */
-                    if (test->json_output)
-                        cJSON_AddItemToObject(test->json_end, sum_sent_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  retransmits: %d sender: %b", (double)start_time, (double)sender_time, (double)sender_time, (int64_t)total_sent, bandwidth * 8, (int64_t)total_retransmits, stream_must_be_sender));
-                    else if (test->role == 's' && !stream_must_be_sender) {
+                    if (test->role == 's' && !stream_must_be_sender) {
                         if (test->verbose)
                             iperf_printf(test, report_sender_not_available_summary_format, "SUM");
                     } else {
@@ -3506,9 +2947,7 @@ static void iperf_print_results(struct iperf_test *test) {
                     }
                 } else {
                     /* Summary sum, TCP without retransmits. */
-                    if (test->json_output)
-                        cJSON_AddItemToObject(test->json_end, sum_sent_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f sender: %b", (double)start_time, (double)sender_time, (double)sender_time, (int64_t)total_sent, bandwidth * 8, stream_must_be_sender));
-                    else if (test->role == 's' && !stream_must_be_sender) {
+                    if (test->role == 's' && !stream_must_be_sender) {
                         if (test->verbose)
                             iperf_printf(test, report_sender_not_available_summary_format, "SUM");
                     } else {
@@ -3523,9 +2962,7 @@ static void iperf_print_results(struct iperf_test *test) {
                     bandwidth = 0.0;
                 }
                 unit_snprintf(nbuf, UNIT_LEN, bandwidth, test->settings->unit_format);
-                if (test->json_output)
-                    cJSON_AddItemToObject(test->json_end, sum_received_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f sender: %b", (double)start_time, (double)receiver_time, (double)receiver_time, (int64_t)total_received, bandwidth * 8, stream_must_be_sender));
-                else if (test->role == 's' && stream_must_be_sender) {
+                if (test->role == 's' && stream_must_be_sender) {
                     if (test->verbose)
                         iperf_printf(test, report_receiver_not_available_summary_format, "SUM");
                 } else {
@@ -3540,47 +2977,37 @@ static void iperf_print_results(struct iperf_test *test) {
                 } else {
                     lost_percent = 0.0;
                 }
-                if (test->json_output) {
-                    /*
-                     * Original, summary structure. Using this
-                     * structure is not recommended due to
-                     * ambiguities between the sender and receiver.
-                     */
-                    cJSON_AddItemToObject(test->json_end, sum_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f sender: %b", (double)start_time, (double)receiver_time, (double)receiver_time, (int64_t)total_sent, bandwidth * 8, (double)avg_jitter * 1000.0, (int64_t)lost_packets, (int64_t)total_packets, (double)lost_percent, stream_must_be_sender));
-                    /*
-                     * Separate sum_sent and sum_received structures.
-                     * Using these structures to get the most complete
-                     * information about UDP transfer.
-                     */
-                    cJSON_AddItemToObject(test->json_end, sum_sent_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f  sender: %b", (double)start_time, (double)sender_time, (double)sender_time, (int64_t)total_sent, (double)total_sent * 8 / sender_time, (double)0.0, (int64_t)0, (int64_t)sender_total_packets, (double)0.0, 1));
-                    cJSON_AddItemToObject(test->json_end, sum_received_name, iperf_json_printf("start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f  sender: %b", (double)start_time, (double)receiver_time, (double)receiver_time, (int64_t)total_received, (double)total_received * 8 / receiver_time, (double)avg_jitter * 1000.0, (int64_t)lost_packets, (int64_t)receiver_total_packets, (double)lost_percent, 0));
-                } else {
-                    /*
-                     * On the client we have both sender and receiver overall summary
-                     * stats.  On the server we have only the side that was on the
-                     * server.  Output whatever we have.
-                     */
-                    if (!(test->role == 's' && !stream_must_be_sender)) {
-                        unit_snprintf(ubuf, UNIT_LEN, (double)total_sent, 'A');
-                        iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, sender_time, ubuf, nbuf, 0.0, 0, sender_total_packets, 0.0, "sender");
+                /*
+                    * On the client we have both sender and receiver overall summary
+                    * stats.  On the server we have only the side that was on the
+                    * server.  Output whatever we have.
+                    */
+                if (!(test->role == 's' && !stream_must_be_sender)) {
+                    unit_snprintf(ubuf, UNIT_LEN, (double)total_sent, 'A');
+                    iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, sender_time, ubuf, nbuf, 0.0, 0, sender_total_packets, 0.0, "sender");
+                }
+                if (!(test->role == 's' && stream_must_be_sender)) {
+                    unit_snprintf(ubuf, UNIT_LEN, (double)total_received, 'A');
+                    /* Compute received bandwidth. */
+                    if (end_time > 0.0) {
+                        bandwidth = (double)total_received / (double)receiver_time;
+                    } else {
+                        bandwidth = 0.0;
                     }
-                    if (!(test->role == 's' && stream_must_be_sender)) {
-                        unit_snprintf(ubuf, UNIT_LEN, (double)total_received, 'A');
-                        /* Compute received bandwidth. */
-                        if (end_time > 0.0) {
-                            bandwidth = (double)total_received / (double)receiver_time;
-                        } else {
-                            bandwidth = 0.0;
-                        }
-                        unit_snprintf(nbuf, UNIT_LEN, bandwidth, test->settings->unit_format);
-                        iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, receiver_time, ubuf, nbuf, avg_jitter * 1000.0, lost_packets, receiver_total_packets, lost_percent, "receiver");
-                    }
+                    unit_snprintf(nbuf, UNIT_LEN, bandwidth, test->settings->unit_format);
+                    iperf_printf(test, report_sum_bw_udp_format, mbuf, start_time, receiver_time, ubuf, nbuf, avg_jitter * 1000.0, lost_packets, receiver_total_packets, lost_percent, "receiver");
                 }
             }
         }
 
-        if (test->json_output && current_mode == upper_mode) {
-            cJSON_AddItemToObject(test->json_end, "cpu_utilization_percent", iperf_json_printf("host_total: %f  host_user: %f  host_system: %f  remote_total: %f  remote_user: %f  remote_system: %f", (double)test->cpu_util[0], (double)test->cpu_util[1], (double)test->cpu_util[2], (double)test->remote_cpu_util[0], (double)test->remote_cpu_util[1], (double)test->remote_cpu_util[2]));
+        if (test->verbose) {
+            if (stream_must_be_sender) {
+                if (test->bidirectional) {
+                    iperf_printf(test, report_cpu, report_local, stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
+                    iperf_printf(test, report_cpu, report_local, !stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, !stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
+                } else
+                    iperf_printf(test, report_cpu, report_local, stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
+            }
             if (test->protocol->id == Ptcp) {
                 char *snd_congestion = NULL, *rcv_congestion = NULL;
                 if (stream_must_be_sender) {
@@ -3591,52 +3018,26 @@ static void iperf_print_results(struct iperf_test *test) {
                     rcv_congestion = test->congestion_used;
                 }
                 if (snd_congestion) {
-                    cJSON_AddStringToObject(test->json_end, "sender_tcp_congestion", snd_congestion);
+                    iperf_printf(test, "snd_tcp_congestion %s\n", snd_congestion);
                 }
                 if (rcv_congestion) {
-                    cJSON_AddStringToObject(test->json_end, "receiver_tcp_congestion", rcv_congestion);
+                    iperf_printf(test, "rcv_tcp_congestion %s\n", rcv_congestion);
                 }
             }
-        } else {
-            if (test->verbose) {
-                if (stream_must_be_sender) {
-                    if (test->bidirectional) {
-                        iperf_printf(test, report_cpu, report_local, stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
-                        iperf_printf(test, report_cpu, report_local, !stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, !stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
-                    } else
-                        iperf_printf(test, report_cpu, report_local, stream_must_be_sender ? report_sender : report_receiver, test->cpu_util[0], test->cpu_util[1], test->cpu_util[2], report_remote, stream_must_be_sender ? report_receiver : report_sender, test->remote_cpu_util[0], test->remote_cpu_util[1], test->remote_cpu_util[2]);
-                }
-                if (test->protocol->id == Ptcp) {
-                    char *snd_congestion = NULL, *rcv_congestion = NULL;
-                    if (stream_must_be_sender) {
-                        snd_congestion = test->congestion_used;
-                        rcv_congestion = test->remote_congestion_used;
-                    } else {
-                        snd_congestion = test->remote_congestion_used;
-                        rcv_congestion = test->congestion_used;
-                    }
-                    if (snd_congestion) {
-                        iperf_printf(test, "snd_tcp_congestion %s\n", snd_congestion);
-                    }
-                    if (rcv_congestion) {
-                        iperf_printf(test, "rcv_tcp_congestion %s\n", rcv_congestion);
-                    }
-                }
-            }
+        }
 
-            /* Print server output if we're on the client and it was requested/provided */
-            if (test->role == 'c' && iperf_get_test_get_server_output(test) && !test->json_output) {
-                if (test->json_server_output) {
-                    char *str = cJSON_Print(test->json_server_output);
-                    iperf_printf(test, "\nServer JSON output:\n%s\n", str);
-                    cJSON_free(str);
-                    cJSON_Delete(test->json_server_output);
-                    test->json_server_output = NULL;
-                }
-                if (test->server_output_text) {
-                    iperf_printf(test, "\nServer output:\n%s\n", test->server_output_text);
-                    test->server_output_text = NULL;
-                }
+        /* Print server output if we're on the client and it was requested/provided */
+        if (test->role == 'c' && iperf_get_test_get_server_output(test)) {
+            if (test->json_server_output) {
+                char *str = cJSON_Print(test->json_server_output);
+                iperf_printf(test, "\nServer JSON output:\n%s\n", str);
+                cJSON_free(str);
+                cJSON_Delete(test->json_server_output);
+                test->json_server_output = NULL;
+            }
+            if (test->server_output_text) {
+                iperf_printf(test, "\nServer output:\n%s\n", test->server_output_text);
+                test->server_output_text = NULL;
             }
         }
     }
@@ -3674,7 +3075,7 @@ void iperf_reporter_callback(struct iperf_test *test) {
  * This function needs to know about the overall test so it can determine the
  * context for printing headers, separators, etc.
  */
-static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp, cJSON *json_interval_streams) {
+static void print_interval_results(struct iperf_test *test, struct iperf_stream *sp) {
     char ubuf[UNIT_LEN];
     char nbuf[UNIT_LEN];
     char cbuf[UNIT_LEN];
@@ -3697,39 +3098,37 @@ static void print_interval_results(struct iperf_test *test, struct iperf_stream 
         iperf_err(test, "print_interval_results error: interval_results is NULL");
         return;
     }
-    if (!test->json_output) {
-        /* First stream? */
-        if (sp == SLIST_FIRST(&test->streams)) {
-            /* It it's the first interval, print the header;
-            ** else if there's more than one stream, print the separator;
-            ** else nothing.
-            */
-            if (iperf_time_compare(&sp->result->start_time, &irp->interval_start_time) == 0) {
-                if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
-                    if (test->sender_has_retransmits == 1) {
-                        if (test->bidirectional)
-                            iperf_printf(test, "%s", report_bw_retrans_cwnd_header_bidir);
-                        else
-                            iperf_printf(test, "%s", report_bw_retrans_cwnd_header);
-                    } else {
-                        if (test->bidirectional)
-                            iperf_printf(test, "%s", report_bw_header_bidir);
-                        else
-                            iperf_printf(test, "%s", report_bw_header);
-                    }
+    /* First stream? */
+    if (sp == SLIST_FIRST(&test->streams)) {
+        /* It it's the first interval, print the header;
+        ** else if there's more than one stream, print the separator;
+        ** else nothing.
+        */
+        if (iperf_time_compare(&sp->result->start_time, &irp->interval_start_time) == 0) {
+            if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
+                if (test->sender_has_retransmits == 1) {
+                    if (test->bidirectional)
+                        iperf_printf(test, "%s", report_bw_retrans_cwnd_header_bidir);
+                    else
+                        iperf_printf(test, "%s", report_bw_retrans_cwnd_header);
                 } else {
-                    if (test->mode == SENDER) {
-                        iperf_printf(test, "%s", report_bw_udp_sender_header);
-                    } else if (test->mode == RECEIVER) {
-                        iperf_printf(test, "%s", report_bw_udp_header);
-                    } else {
-                        /* BIDIRECTIONAL */
-                        iperf_printf(test, "%s", report_bw_udp_header_bidir);
-                    }
+                    if (test->bidirectional)
+                        iperf_printf(test, "%s", report_bw_header_bidir);
+                    else
+                        iperf_printf(test, "%s", report_bw_header);
                 }
-            } else if (test->num_streams > 1)
-                iperf_printf(test, "%s", report_bw_separator);
-        }
+            } else {
+                if (test->mode == SENDER) {
+                    iperf_printf(test, "%s", report_bw_udp_sender_header);
+                } else if (test->mode == RECEIVER) {
+                    iperf_printf(test, "%s", report_bw_udp_header);
+                } else {
+                    /* BIDIRECTIONAL */
+                    iperf_printf(test, "%s", report_bw_udp_header_bidir);
+                }
+            }
+        } else if (test->num_streams > 1)
+            iperf_printf(test, "%s", report_bw_separator);
     }
 
     unit_snprintf(ubuf, UNIT_LEN, (double)(irp->bytes_transferred), 'A');
@@ -3748,36 +3147,23 @@ static void print_interval_results(struct iperf_test *test, struct iperf_stream 
     if (test->protocol->id == Ptcp || test->protocol->id == Psctp) {
         if (test->sender_has_retransmits == 1 && sp->sender) {
             /* Interval, TCP with retransmits. */
-            if (test->json_output)
-                cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  retransmits: %d  snd_cwnd:  %d  snd_wnd:  %d  rtt:  %d  rttvar: %d  pmtu: %d  omitted: %b sender: %b", (int64_t)sp->socket, (double)st, (double)et, (double)irp->interval_duration, (int64_t)irp->bytes_transferred, bandwidth * 8, (int64_t)irp->interval_retrans, (int64_t)irp->snd_cwnd, (int64_t)irp->snd_wnd, (int64_t)irp->rtt, (int64_t)irp->rttvar, (int64_t)irp->pmtu, irp->omitted, sp->sender));
-            else {
-                unit_snprintf(cbuf, UNIT_LEN, irp->snd_cwnd, 'A');
-                iperf_printf(test, report_bw_retrans_cwnd_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->interval_retrans, cbuf, irp->omitted ? report_omitted : "");
-            }
+            unit_snprintf(cbuf, UNIT_LEN, irp->snd_cwnd, 'A');
+            iperf_printf(test, report_bw_retrans_cwnd_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->interval_retrans, cbuf, irp->omitted ? report_omitted : "");
         } else {
             /* Interval, TCP without retransmits. */
-            if (test->json_output)
-                cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  omitted: %b sender: %b", (int64_t)sp->socket, (double)st, (double)et, (double)irp->interval_duration, (int64_t)irp->bytes_transferred, bandwidth * 8, irp->omitted, sp->sender));
-            else
-                iperf_printf(test, report_bw_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->omitted ? report_omitted : "");
+            iperf_printf(test, report_bw_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->omitted ? report_omitted : "");
         }
     } else {
         /* Interval, UDP. */
         if (sp->sender) {
-            if (test->json_output)
-                cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  packets: %d  omitted: %b sender: %b", (int64_t)sp->socket, (double)st, (double)et, (double)irp->interval_duration, (int64_t)irp->bytes_transferred, bandwidth * 8, (int64_t)irp->interval_packet_count, irp->omitted, sp->sender));
-            else
-                iperf_printf(test, report_bw_udp_sender_format, sp->socket, mbuf, st, et, ubuf, nbuf, zbuf, irp->interval_packet_count, irp->omitted ? report_omitted : "");
+            iperf_printf(test, report_bw_udp_sender_format, sp->socket, mbuf, st, et, ubuf, nbuf, zbuf, irp->interval_packet_count, irp->omitted ? report_omitted : "");
         } else {
             if (irp->interval_packet_count > 0) {
                 lost_percent = 100.0 * irp->interval_cnt_error / irp->interval_packet_count;
             } else {
                 lost_percent = 0.0;
             }
-            if (test->json_output)
-                cJSON_AddItemToArray(json_interval_streams, iperf_json_printf("socket: %d  start: %f  end: %f  seconds: %f  bytes: %d  bits_per_second: %f  jitter_ms: %f  lost_packets: %d  packets: %d  lost_percent: %f  omitted: %b sender: %b", (int64_t)sp->socket, (double)st, (double)et, (double)irp->interval_duration, (int64_t)irp->bytes_transferred, bandwidth * 8, (double)irp->jitter * 1000.0, (int64_t)irp->interval_cnt_error, (int64_t)irp->interval_packet_count, (double)lost_percent, irp->omitted, sp->sender));
-            else
-                iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->jitter * 1000.0, irp->interval_cnt_error, irp->interval_packet_count, lost_percent, irp->omitted ? report_omitted : "");
+            iperf_printf(test, report_bw_udp_format, sp->socket, mbuf, st, et, ubuf, nbuf, irp->jitter * 1000.0, irp->interval_cnt_error, irp->interval_packet_count, lost_percent, irp->omitted ? report_omitted : "");
         }
     }
 
@@ -4153,203 +3539,6 @@ void iperf_got_sigend(struct iperf_test *test) {
     }
     i_errno = (test->role == 'c') ? IECLIENTTERM : IESERVERTERM;
     iperf_errexit(test, "interrupt - %s", iperf_strerror(i_errno));
-}
-
-/* Try to write a PID file if requested, return -1 on an error. */
-int iperf_create_pidfile(struct iperf_test *test) {
-    if (test->pidfile) {
-        int fd;
-        char buf[8];
-
-        /* See if the file already exists and we can read it. */
-        fd = open(test->pidfile, O_RDONLY, 0);
-        if (fd >= 0) {
-            if (read(fd, buf, sizeof(buf) - 1) >= 0) {
-                /* We read some bytes, see if they correspond to a valid PID */
-                pid_t pid;
-                pid = atoi(buf);
-                if (pid > 0) {
-                    /* See if the process exists. */
-                    if (kill(pid, 0) == 0) {
-                        /*
-                         * Make sure not to try to delete existing PID file by
-                         * scribbling over the pathname we'd use to refer to it.
-                         * Then exit with an error.
-                         */
-                        free(test->pidfile);
-                        test->pidfile = NULL;
-                        iperf_errexit(test, "Another instance of iperf3 appears to be running");
-                    }
-                }
-            }
-        }
-
-        /*
-         * File didn't exist, we couldn't read it, or it didn't correspond to
-         * a running process.  Try to create it.
-         */
-        fd = open(test->pidfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-        if (fd < 0) {
-            return -1;
-        }
-        snprintf(buf, sizeof(buf), "%d", getpid()); /* no trailing newline */
-        if (write(fd, buf, strlen(buf)) < 0) {
-            (void)close(fd);
-            return -1;
-        }
-        if (close(fd) < 0) {
-            return -1;
-        };
-    }
-    return 0;
-}
-
-/* Get rid of a PID file, return -1 on error. */
-int iperf_delete_pidfile(struct iperf_test *test) {
-    if (test->pidfile) {
-        if (unlink(test->pidfile) < 0) {
-            return -1;
-        }
-    }
-    return 0;
-}
-
-int iperf_json_start(struct iperf_test *test) {
-    test->json_top = cJSON_CreateObject();
-    if (test->json_top == NULL)
-        return -1;
-    test->json_start = cJSON_CreateObject();
-    if (test->json_start == NULL)
-        return -1;
-    cJSON_AddItemToObject(test->json_top, "start", test->json_start);
-    test->json_connected = cJSON_CreateArray();
-    if (test->json_connected == NULL)
-        return -1;
-    cJSON_AddItemToObject(test->json_start, "connected", test->json_connected);
-    test->json_intervals = cJSON_CreateArray();
-    if (test->json_intervals == NULL)
-        return -1;
-    cJSON_AddItemToObject(test->json_top, "intervals", test->json_intervals);
-    test->json_end = cJSON_CreateObject();
-    if (test->json_end == NULL)
-        return -1;
-    cJSON_AddItemToObject(test->json_top, "end", test->json_end);
-    return 0;
-}
-
-int iperf_json_finish(struct iperf_test *test) {
-    if (test->title)
-        cJSON_AddStringToObject(test->json_top, "title", test->title);
-    if (test->extra_data)
-        cJSON_AddStringToObject(test->json_top, "extra_data", test->extra_data);
-    /* Include server output */
-    if (test->json_server_output) {
-        cJSON_AddItemToObject(test->json_top, "server_output_json", test->json_server_output);
-    }
-    if (test->server_output_text) {
-        cJSON_AddStringToObject(test->json_top, "server_output_text", test->server_output_text);
-    }
-    // Get ASCII rendering of JSON structure.  Then make our
-    // own copy of it and return the storage that cJSON allocated
-    // on our behalf.  We keep our own copy around.
-    char *str = cJSON_Print(test->json_top);
-    if (str == NULL)
-        return -1;
-    test->json_output_string = strdup(str);
-    cJSON_free(str);
-    if (test->json_output_string == NULL)
-        return -1;
-    fprintf(test->outfile, "%s\n", test->json_output_string);
-    iflush(test);
-    cJSON_Delete(test->json_top);
-    test->json_top = test->json_start = test->json_connected = test->json_intervals = test->json_server_output = test->json_end = NULL;
-    return 0;
-}
-
-/* CPU affinity stuff - Linux, FreeBSD, and Windows only. */
-
-int iperf_setaffinity(struct iperf_test *test, int affinity) {
-#if defined(HAVE_SCHED_SETAFFINITY)
-    cpu_set_t cpu_set;
-
-    CPU_ZERO(&cpu_set);
-    CPU_SET(affinity, &cpu_set);
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set) != 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#elif defined(HAVE_CPUSET_SETAFFINITY)
-    cpuset_t cpumask;
-
-    if (cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, -1,
-                           sizeof(cpuset_t), &test->cpumask)
-        != 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-
-    CPU_ZERO(&cpumask);
-    CPU_SET(affinity, &cpumask);
-
-    if (cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, -1,
-                           sizeof(cpuset_t), &cpumask)
-        != 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#elif defined(HAVE_SETPROCESSAFFINITYMASK)
-    HANDLE process = GetCurrentProcess();
-    DWORD_PTR processAffinityMask = 1 << affinity;
-
-    if (SetProcessAffinityMask(process, processAffinityMask) == 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#else  /* neither HAVE_SCHED_SETAFFINITY nor HAVE_CPUSET_SETAFFINITY nor HAVE_SETPROCESSAFFINITYMASK */
-    i_errno = IEAFFINITY;
-    return -1;
-#endif /* neither HAVE_SCHED_SETAFFINITY nor HAVE_CPUSET_SETAFFINITY nor HAVE_SETPROCESSAFFINITYMASK */
-}
-
-int iperf_clearaffinity(struct iperf_test *test) {
-#if defined(HAVE_SCHED_SETAFFINITY)
-    cpu_set_t cpu_set;
-    int i;
-
-    CPU_ZERO(&cpu_set);
-    for (i = 0; i < CPU_SETSIZE; ++i)
-        CPU_SET(i, &cpu_set);
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set) != 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#elif defined(HAVE_CPUSET_SETAFFINITY)
-    if (cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, -1,
-                           sizeof(cpuset_t), &test->cpumask)
-        != 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#elif defined(HAVE_SETPROCESSAFFINITYMASK)
-    HANDLE process = GetCurrentProcess();
-    DWORD_PTR processAffinityMask;
-    DWORD_PTR lpSystemAffinityMask;
-
-    if (GetProcessAffinityMask(process, &processAffinityMask, &lpSystemAffinityMask) == 0
-        || SetProcessAffinityMask(process, lpSystemAffinityMask) == 0) {
-        i_errno = IEAFFINITY;
-        return -1;
-    }
-    return 0;
-#else  /* neither HAVE_SCHED_SETAFFINITY nor HAVE_CPUSET_SETAFFINITY nor HAVE_SETPROCESSAFFINITYMASK */
-    i_errno = IEAFFINITY;
-    return -1;
-#endif /* neither HAVE_SCHED_SETAFFINITY nor HAVE_CPUSET_SETAFFINITY nor HAVE_SETPROCESSAFFINITYMASK */
 }
 
 static char iperf_timestr[100];

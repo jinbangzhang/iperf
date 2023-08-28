@@ -200,7 +200,7 @@ static void client_omit_timer_proc(TimerClientData client_data, struct iperf_tim
     test->omit_timer = NULL;
     test->omitting = 0;
     iperf_reset_stats(test);
-    if (test->verbose && !test->json_output && test->reporter_interval == 0)
+    if (test->verbose && test->reporter_interval == 0)
         iperf_printf(test, "%s", report_omit_done);
 
     /* Reset the timers. */
@@ -493,18 +493,7 @@ int iperf_run_client(struct iperf_test *test) {
         if (iperf_open_logfile(test) < 0)
             return -1;
 
-    if (test->affinity != -1)
-        if (iperf_setaffinity(test, test->affinity) != 0)
-            return -1;
-
-    if (test->json_output)
-        if (iperf_json_start(test) < 0)
-            return -1;
-
-    if (test->json_output) {
-        cJSON_AddItemToObject(test->json_start, "version", cJSON_CreateString(version));
-        cJSON_AddItemToObject(test->json_start, "system_info", cJSON_CreateString(get_system_info()));
-    } else if (test->verbose) {
+    if (test->verbose) {
         iperf_printf(test, "%s\n", version);
         iperf_printf(test, "%s", "");
         iperf_printf(test, "%s\n", get_system_info());
@@ -640,13 +629,8 @@ int iperf_run_client(struct iperf_test *test) {
         }
     }
 
-    if (test->json_output) {
-        if (iperf_json_finish(test) < 0)
-            return -1;
-    } else {
-        iperf_printf(test, "\n");
-        iperf_printf(test, "%s", report_done);
-    }
+    iperf_printf(test, "\n");
+    iperf_printf(test, "%s", report_done);
 
     iflush(test);
 
@@ -654,14 +638,6 @@ int iperf_run_client(struct iperf_test *test) {
 
 cleanup_and_fail:
     iperf_client_end(test);
-    if (test->json_output) {
-        cJSON_AddStringToObject(test->json_top, "error", iperf_strerror(i_errno));
-        iperf_json_finish(test);
-        iflush(test);
-        // Return 0 and not -1 since all terminating function were done here.
-        // Also prevents error message logging outside the already closed JSON output.
-        return 0;
-    }
     iflush(test);
     return -1;
 }

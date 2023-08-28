@@ -55,40 +55,6 @@ static int run(struct iperf_test *test);
 int main(int argc, char **argv) {
     struct iperf_test *test;
 
-    // XXX: Setting the process affinity requires root on most systems.
-    //      Is this a feature we really need?
-#ifdef TEST_PROC_AFFINITY
-    /* didn't seem to work.... */
-    /*
-     * increasing the priority of the process to minimise packet generation
-     * delay
-     */
-    int rc = setpriority(PRIO_PROCESS, 0, -15);
-
-    if (rc < 0) {
-        perror("setpriority:");
-        fprintf(stderr, "setting priority to valid level\n");
-        rc = setpriority(PRIO_PROCESS, 0, 0);
-    }
-
-    /* setting the affinity of the process  */
-    cpu_set_t cpu_set;
-    int affinity = -1;
-    int ncores = 1;
-
-    sched_getaffinity(0, sizeof(cpu_set_t), &cpu_set);
-    if (errno)
-        perror("couldn't get affinity:");
-
-    if ((ncores = sysconf(_SC_NPROCESSORS_CONF)) <= 0)
-        err("sysconf: couldn't get _SC_NPROCESSORS_CONF");
-
-    CPU_ZERO(&cpu_set);
-    CPU_SET(affinity, &cpu_set);
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set) != 0)
-        err("couldn't change CPU affinity");
-#endif
-
     test = iperf_new_test();
     if (!test)
         iperf_errexit(NULL, "create new test error - %s", iperf_strerror(i_errno));
@@ -135,20 +101,12 @@ static int run(struct iperf_test *test) {
                 iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
             }
         }
-        if (iperf_create_pidfile(test) < 0) {
-            i_errno = IEPIDFILE;
-            iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
-        }
         for (;;) {
             int rc;
             rc = iperf_run_server(test);
             test->server_last_run_rc = rc;
             if (rc < 0) {
                 iperf_err(test, "error - %s", iperf_strerror(i_errno));
-                if (test->json_output) {
-                    if (iperf_json_finish(test) < 0)
-                        return -1;
-                }
                 iflush(test);
 
                 if (rc < -1) {
@@ -156,24 +114,11 @@ static int run(struct iperf_test *test) {
                 }
             }
             iperf_reset_test(test);
-            if (iperf_get_test_one_off(test) && rc != 2) {
-                /* Authentication failure doesn't count for 1-off test */
-                if (rc < 0 && i_errno == IEAUTHTEST) {
-                    continue;
-                }
-                break;
-            }
         }
-        iperf_delete_pidfile(test);
         break;
     case 'c':
-        if (iperf_create_pidfile(test) < 0) {
-            i_errno = IEPIDFILE;
-            iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
-        }
         if (iperf_run_client(test) < 0)
             iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
-        iperf_delete_pidfile(test);
         break;
     default:
         usage();

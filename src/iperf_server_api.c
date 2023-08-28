@@ -84,16 +84,14 @@ retry:
         }
     }
 
-    if (!test->json_output) {
-        if (test->server_last_run_rc != 2)
-            test->server_test_number += 1;
-        if (test->debug || test->server_last_run_rc != 2) {
-            iperf_printf(test, "-----------------------------------------------------------\n");
-            iperf_printf(test, "Server listening on %d (test #%d)\n", test->server_port, test->server_test_number);
-            iperf_printf(test, "-----------------------------------------------------------\n");
-            if (test->forceflush)
-                iflush(test);
-        }
+    if (test->server_last_run_rc != 2)
+        test->server_test_number += 1;
+    if (test->debug || test->server_last_run_rc != 2) {
+        iperf_printf(test, "-----------------------------------------------------------\n");
+        iperf_printf(test, "Server listening on %d (test #%d)\n", test->server_port, test->server_test_number);
+        iperf_printf(test, "-----------------------------------------------------------\n");
+        if (test->forceflush)
+            iflush(test);
     }
 
     FD_ZERO(&test->read_set);
@@ -147,9 +145,6 @@ int iperf_accept(struct iperf_test *test) {
             return -1;
         if (iperf_exchange_parameters(test) < 0)
             return -1;
-        if (test->server_affinity != -1)
-            if (iperf_setaffinity(test, test->server_affinity) != 0)
-                return -1;
         if (test->on_connect)
             test->on_connect(test);
     } else {
@@ -325,7 +320,7 @@ static void server_omit_timer_proc(TimerClientData client_data, struct iperf_tim
     test->omit_timer = NULL;
     test->omitting = 0;
     iperf_reset_stats(test);
-    if (test->verbose && !test->json_output && test->reporter_interval == 0)
+    if (test->verbose && test->reporter_interval == 0)
         iperf_printf(test, "%s", report_omit_done);
 
     /* Reset the timers. */
@@ -432,22 +427,7 @@ int iperf_run_server(struct iperf_test *test) {
         if (iperf_open_logfile(test) < 0)
             return -2;
 
-    if (test->affinity != -1)
-        if (iperf_setaffinity(test, test->affinity) != 0) {
-            cleanup_server(test);
-            return -2;
-        }
-
-    if (test->json_output)
-        if (iperf_json_start(test) < 0) {
-            cleanup_server(test);
-            return -2;
-        }
-
-    if (test->json_output) {
-        cJSON_AddItemToObject(test->json_start, "version", cJSON_CreateString(version));
-        cJSON_AddItemToObject(test->json_start, "system_info", cJSON_CreateString(get_system_info()));
-    } else if (test->verbose) {
+    if (test->verbose) {
         iperf_printf(test, "%s\n", version);
         iperf_printf(test, "%s", "");
         iperf_printf(test, "%s\n", get_system_info());
@@ -522,12 +502,6 @@ int iperf_run_server(struct iperf_test *test) {
                             printf("Server restart (#%d) in idle state as no connection request was received for %d sec\n",
                                    test->server_forced_idle_restarts_count, test->settings->idle_timeout);
                         cleanup_server(test);
-                        if (iperf_get_test_one_off(test)) {
-                            if (test->debug)
-                                printf("No connection request was received for %d sec in one-off mode; exiting.\n",
-                                       test->settings->idle_timeout);
-                            exit(0);
-                        }
 
                         return 2;
                     }
@@ -801,17 +775,8 @@ int iperf_run_server(struct iperf_test *test) {
         }
     }
 
-    if (test->json_output) {
-        if (iperf_json_finish(test) < 0)
-            return -1;
-    }
-
     iflush(test);
     cleanup_server(test);
-
-    if (test->server_affinity != -1)
-        if (iperf_clearaffinity(test) != 0)
-            return -1;
 
     return 0;
 }
